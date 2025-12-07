@@ -106,13 +106,38 @@ def load_client_data(client_id: str, contact_id: str, assessment_date: date, use
         return pd.DataFrame()
 
 
-def get_risk_level(housing_risk: bool, impairment_risk: bool, mmh_risk: bool) -> str:
+def normalize_flag(flag) -> bool:
+    """
+    Normalize a risk flag value to a boolean.
+    Handles bool, None/NaN, int, float, and string values.
+    """
+    if isinstance(flag, bool):
+        return flag
+    
+    if flag is None or (isinstance(flag, float) and pd.isna(flag)):
+        return False
+    
+    if isinstance(flag, (int, float)):
+        return bool(flag)
+    
+    if isinstance(flag, str):
+        v = flag.strip().lower()
+        if v in {"true", "t", "1", "yes", "y"}:
+            return True
+        if v in {"false", "f", "0", "no", "n", ""}:
+            return False
+    
+    return False
+
+
+def get_risk_level(housing_risk, impairment_risk, mmh_risk) -> str:
     """Determine overall risk level based on individual risk flags."""
-    risk_count = sum([
-        housing_risk if housing_risk else False,
-        impairment_risk if impairment_risk else False,
-        mmh_risk if mmh_risk else False
-    ])
+    flags = [
+        normalize_flag(housing_risk),
+        normalize_flag(impairment_risk),
+        normalize_flag(mmh_risk),
+    ]
+    risk_count = sum(flags)
     
     if risk_count >= 2:
         return "HIGH RISK"
@@ -141,9 +166,9 @@ def safe_str(value) -> str:
 
 def format_risk_flag(flag) -> str:
     """Format risk flag for display."""
-    if pd.isna(flag) or flag is None:
+    if flag is None or (isinstance(flag, float) and pd.isna(flag)):
         return "Not assessed"
-    return "HIGH RISK" if flag else "LOW RISK"
+    return "HIGH RISK" if normalize_flag(flag) else "LOW RISK"
 
 
 def generate_pdf(data_row: pd.Series) -> BytesIO:
