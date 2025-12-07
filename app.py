@@ -267,25 +267,19 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
     housing_risk = data_row.get('housing_risk_flag', False)
     impairment_risk = data_row.get('impairment_risk_flag', False)
     mmh_risk = data_row.get('mmh_risk_flag', False)
-    overall_risk = get_risk_level(housing_risk, impairment_risk, mmh_risk)
-    risk_color = get_risk_color(overall_risk)
-    
-    title_style.textColor = risk_color
     
     story = []
     
-    story.append(Paragraph(f"CLIENT BACKGROUND REPORT", title_style))
-    story.append(Paragraph("Plunket AI Model Analysis", subtitle_style))
+    story.append(Paragraph("CLIENT BACKGROUND REPORT", title_style))
+    story.append(Paragraph("Based on Plunket AI Model Analysis", subtitle_style))
     
     story.append(HRFlowable(
         width="100%",
-        thickness=2,
-        color=risk_color,
+        thickness=1,
+        color=colors.HexColor("#DDDDDD"),
         spaceBefore=4,
         spaceAfter=12
     ))
-    
-    story.append(Paragraph("CASE DETAILS", section_header_style))
     
     client_id = safe_str(data_row.get('koo_clientid', ''))
     contact_id = safe_str(data_row.get('koo_contactid', ''))
@@ -299,11 +293,11 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
         date_str = "Not available"
     
     case_data = [
-        ['Client ID:', client_id, 'Case Manager:', f"Nurse {contact_id}"],
-        ['Assessment Date:', date_str, 'Generated:', datetime.now().strftime('%Y-%m-%d %H:%M')]
+        ['Client ID:', client_id, 'Contact ID:', contact_id],
+        ['Date:', date_str, 'Generated:', datetime.now().strftime('%Y-%m-%d %H:%M')]
     ]
     
-    case_table = Table(case_data, colWidths=[2.5*cm, 5*cm, 3*cm, 5*cm])
+    case_table = Table(case_data, colWidths=[2.5*cm, 5*cm, 2.5*cm, 5*cm])
     case_table.setStyle(TableStyle([
         ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
         ('FONTSIZE', (0, 0), (-1, -1), 10),
@@ -321,72 +315,46 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
     
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DDDDDD"), spaceAfter=8))
     
-    story.append(Paragraph("RISK ASSESSMENT", section_header_style))
-    
-    risk_style = risk_high_style if overall_risk == "HIGH RISK" else risk_low_style
-    story.append(Paragraph(f"<b>Overall Risk Level: {overall_risk}</b>", risk_style))
-    story.append(Spacer(1, 8))
-    
-    risk_data = [
-        ['Risk Category', 'Status'],
-        ['Housing Risk', format_risk_flag(housing_risk)],
-        ['Impairment Risk', format_risk_flag(impairment_risk)],
-        ['Mental/Maternal Health Risk', format_risk_flag(mmh_risk)]
-    ]
-    
-    risk_table = Table(risk_data, colWidths=[8*cm, 6*cm])
-    risk_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#F5F5F5")),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor("#333333")),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#DDDDDD")),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
-        ('LEFTPADDING', (0, 0), (-1, -1), 8),
-    ]))
-    story.append(risk_table)
-    story.append(Spacer(1, 12))
-    
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DDDDDD"), spaceAfter=8))
-    
     story.append(Paragraph("DISCUSSION TOPICS", section_header_style))
     
-    story.append(Paragraph("Housing Topics:", subsection_style))
     housing_topics = safe_str(data_row.get('topic_tags_house', ''))
-    story.append(Paragraph(f"&bull; {housing_topics}", body_style))
-    
-    story.append(Paragraph("Impairment Topics:", subsection_style))
     impairment_topics = safe_str(data_row.get('topic_tags_impairment', ''))
-    story.append(Paragraph(f"&bull; {impairment_topics}", body_style))
-    
-    story.append(Paragraph("Mental/Maternal Health Topics:", subsection_style))
     mmh_topics = safe_str(data_row.get('topic_tags_mmh', ''))
-    story.append(Paragraph(f"&bull; {mmh_topics}", body_style))
+    
+    story.append(Paragraph(f"&bull; <b>Housing:</b> {housing_topics}", body_style))
+    story.append(Paragraph(f"&bull; <b>Impairment:</b> {impairment_topics}", body_style))
+    story.append(Paragraph(f"&bull; <b>Mental/Maternal Health:</b> {mmh_topics}", body_style))
     
     story.append(Spacer(1, 12))
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DDDDDD"), spaceAfter=8))
     
-    story.append(Paragraph("DETAILED SUMMARIES", section_header_style))
+    story.append(Paragraph("SUMMARIES", section_header_style))
     
-    story.append(Paragraph("Housing Situation", subsection_style))
+    story.append(Paragraph("Housing Situation:", subsection_style))
     housing_summary = safe_str(data_row.get('housing_summary', ''))
     story.append(Paragraph(housing_summary, body_style))
     
-    story.append(Paragraph("Impairment Status", subsection_style))
+    story.append(Paragraph("Impairment Status:", subsection_style))
     impairment_summary = safe_str(data_row.get('impairments_summary', ''))
     story.append(Paragraph(impairment_summary, body_style))
     
-    story.append(Paragraph("Mental/Maternal Health", subsection_style))
+    story.append(Paragraph("Mental/Maternal Health:", subsection_style))
     mmh_summary = safe_str(data_row.get('mmh_summary', ''))
     story.append(Paragraph(mmh_summary, body_style))
+    
+    story.append(Spacer(1, 12))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DDDDDD"), spaceAfter=8))
+    
+    story.append(Paragraph("RISK FLAGS", section_header_style))
+    
+    story.append(Paragraph(f"&bull; <b>Housing:</b> {normalize_flag(housing_risk)}", body_style))
+    story.append(Paragraph(f"&bull; <b>Impairment:</b> {normalize_flag(impairment_risk)}", body_style))
+    story.append(Paragraph(f"&bull; <b>MMH:</b> {normalize_flag(mmh_risk)}", body_style))
     
     story.append(Spacer(1, 20))
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DDDDDD"), spaceAfter=8))
     
     story.append(Paragraph("Generated by Plunket AI Model.", footer_style))
-    story.append(Paragraph("End of Report", footer_style))
     
     doc.build(story)
     buffer.seek(0)
@@ -398,26 +366,6 @@ def render_report_preview(data_row: pd.Series):
     housing_risk = data_row.get('housing_risk_flag', False)
     impairment_risk = data_row.get('impairment_risk_flag', False)
     mmh_risk = data_row.get('mmh_risk_flag', False)
-    overall_risk = get_risk_level(housing_risk, impairment_risk, mmh_risk)
-    
-    if overall_risk == "HIGH RISK":
-        risk_color = "#C41E3A"
-        bg_color = "#FFF5F5"
-    elif overall_risk == "MODERATE RISK":
-        risk_color = "#FF8C00"
-        bg_color = "#FFFAF0"
-    else:
-        risk_color = "#228B22"
-        bg_color = "#F0FFF0"
-    
-    st.markdown(f"""
-    <div style="background-color: {bg_color}; padding: 20px; border-radius: 8px; border: 1px solid #ddd;">
-        <div style="display: flex; align-items: center; margin-bottom: 10px;">
-            <div style="width: 30px; height: 30px; background-color: {risk_color}; border-radius: 50%; margin-right: 15px;"></div>
-            <h2 style="color: {risk_color}; margin: 0;">Client Background Report ({overall_risk})</h2>
-        </div>
-        <hr style="border: 1px solid {risk_color}; margin: 10px 0;">
-    """, unsafe_allow_html=True)
     
     client_id = safe_str(data_row.get('koo_clientid', ''))
     contact_id = safe_str(data_row.get('koo_contactid', ''))
@@ -430,48 +378,50 @@ def render_report_preview(data_row: pd.Series):
     else:
         date_str = "Not available"
     
-    st.markdown(f"""
-        <p><strong>Client ID:</strong> {client_id} | <strong>Contact ID:</strong> {contact_id} | <strong>Date:</strong> {date_str}</p>
-        <h3 style="margin-top: 20px;">SUMMARY</h3>
-    """, unsafe_allow_html=True)
-    
-    if housing_risk:
-        st.markdown(f"""
-        <div style="background-color: #FFF0F0; padding: 10px; border-left: 4px solid #C41E3A; margin: 10px 0;">
-            <span style="color: #C41E3A;"><strong>Housing Risk: HIGH RISK</strong></span>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    if impairment_risk:
-        st.markdown(f"""
-        <div style="background-color: #FFF0F0; padding: 10px; border-left: 4px solid #C41E3A; margin: 10px 0;">
-            <span style="color: #C41E3A;"><strong>Impairment Risk: HIGH RISK</strong></span>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    if mmh_risk:
-        st.markdown(f"""
-        <div style="background-color: #FFF0F0; padding: 10px; border-left: 4px solid #C41E3A; margin: 10px 0;">
-            <span style="color: #C41E3A;"><strong>Mental/Maternal Health Risk: HIGH RISK</strong></span>
-        </div>
-        """, unsafe_allow_html=True)
+    housing_topics = safe_str(data_row.get('topic_tags_house', ''))
+    impairment_topics = safe_str(data_row.get('topic_tags_impairment', ''))
+    mmh_topics = safe_str(data_row.get('topic_tags_mmh', ''))
     
     housing_summary = safe_str(data_row.get('housing_summary', ''))
-    st.markdown(f"""
-        <p><strong>Housing Situation:</strong> {housing_summary}</p>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("<h3>MMH</h3>", unsafe_allow_html=True)
-    mmh_summary = safe_str(data_row.get('mmh_summary', ''))
-    st.markdown(f"""
-        <p>{mmh_summary}</p>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("<h3>Impairment</h3>", unsafe_allow_html=True)
     impairment_summary = safe_str(data_row.get('impairments_summary', ''))
+    mmh_summary = safe_str(data_row.get('mmh_summary', ''))
+    
     st.markdown(f"""
-        <p>{impairment_summary}</p>
-        <p style="color: #999; text-align: right; margin-top: 30px;">Generated by Plunket AI Model.</p>
+    <div style="padding: 20px; border-radius: 8px; border: 1px solid #ddd; background-color: #fafafa;">
+        <h2 style="margin: 0 0 5px 0;">Client Background Report</h2>
+        <p style="color: #666; margin: 0 0 15px 0;"><em>Based on Plunket AI Model Analysis</em></p>
+        
+        <p><strong>Client ID:</strong> {client_id} | <strong>Contact ID:</strong> {contact_id} | <strong>Date:</strong> {date_str}</p>
+        
+        <hr style="border: 1px solid #ddd; margin: 15px 0;">
+        
+        <h3 style="margin-top: 15px;">DISCUSSION TOPICS</h3>
+        <ul style="margin: 10px 0;">
+            <li><strong>Housing:</strong> {housing_topics}</li>
+            <li><strong>Impairment:</strong> {impairment_topics}</li>
+            <li><strong>Mental/Maternal Health:</strong> {mmh_topics}</li>
+        </ul>
+        
+        <hr style="border: 1px solid #ddd; margin: 15px 0;">
+        
+        <h3>SUMMARIES</h3>
+        
+        <p><strong>Housing Situation:</strong><br>{housing_summary}</p>
+        
+        <p><strong>Impairment Status:</strong><br>{impairment_summary}</p>
+        
+        <p><strong>Mental/Maternal Health:</strong><br>{mmh_summary}</p>
+        
+        <hr style="border: 1px solid #ddd; margin: 15px 0;">
+        
+        <h3>RISK FLAGS</h3>
+        <ul style="margin: 10px 0;">
+            <li><strong>Housing:</strong> {normalize_flag(housing_risk)}</li>
+            <li><strong>Impairment:</strong> {normalize_flag(impairment_risk)}</li>
+            <li><strong>MMH:</strong> {normalize_flag(mmh_risk)}</li>
+        </ul>
+        
+        <p style="color: #999; text-align: right; margin-top: 30px;"><em>Generated by Plunket AI Model.</em></p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -519,13 +469,6 @@ st.markdown("""
     .download-btn > button:hover {
         background-color: #A01830 !important;
     }
-    .input-card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 8px;
-        border: 1px solid #E5E7EB;
-        margin-bottom: 20px;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -537,12 +480,10 @@ st.markdown("""
         <p style="color: #666; margin: 0;">Select client details to generate and review the background report.</p>
     </div>
 </div>
-<hr style="margin: 20px 0;">
 """, unsafe_allow_html=True)
 
 user_token = st.context.headers.get('X-Forwarded-Access-Token')
 
-st.markdown('<div class="input-card">', unsafe_allow_html=True)
 st.subheader("Report Generation Inputs")
 
 col1, col2, col3 = st.columns(3)
@@ -555,8 +496,6 @@ with col2:
 
 with col3:
     assessment_date = st.date_input("Report Date", value=date.today(), key="assessment_date")
-
-st.markdown('</div>', unsafe_allow_html=True)
 
 col_btn, col_spacer = st.columns([1, 3])
 with col_btn:
