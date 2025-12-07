@@ -347,9 +347,14 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
     
     story.append(Paragraph("RISK FLAGS", section_header_style))
     
-    story.append(Paragraph(f"&bull; <b>Housing:</b> {normalize_flag(housing_risk)}", body_style))
-    story.append(Paragraph(f"&bull; <b>Impairment:</b> {normalize_flag(impairment_risk)}", body_style))
-    story.append(Paragraph(f"&bull; <b>MMH:</b> {normalize_flag(mmh_risk)}", body_style))
+    # Use raw risk flag values from database columns
+    housing_risk_raw = safe_str(data_row.get('housing_risk_flag', ''))
+    impairment_risk_raw = safe_str(data_row.get('impairment_risk_flag', ''))
+    mmh_risk_raw = safe_str(data_row.get('mmh_risk_flag', ''))
+    
+    story.append(Paragraph(f"&bull; <b>Housing:</b> {housing_risk_raw}", body_style))
+    story.append(Paragraph(f"&bull; <b>Impairment:</b> {impairment_risk_raw}", body_style))
+    story.append(Paragraph(f"&bull; <b>MMH:</b> {mmh_risk_raw}", body_style))
     
     story.append(Spacer(1, 20))
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DDDDDD"), spaceAfter=8))
@@ -362,11 +367,7 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
 
 
 def render_report_preview(data_row: pd.Series):
-    """Render a preview of the report in Streamlit."""
-    housing_risk = data_row.get('housing_risk_flag', False)
-    impairment_risk = data_row.get('impairment_risk_flag', False)
-    mmh_risk = data_row.get('mmh_risk_flag', False)
-    
+    """Render a preview of the report in Streamlit using native components."""
     client_id = safe_str(data_row.get('koo_clientid', ''))
     contact_id = safe_str(data_row.get('koo_contactid', ''))
     created_on = data_row.get('createdon', '')
@@ -386,44 +387,46 @@ def render_report_preview(data_row: pd.Series):
     impairment_summary = safe_str(data_row.get('impairments_summary', ''))
     mmh_summary = safe_str(data_row.get('mmh_summary', ''))
     
-    st.markdown(f"""
-    <div style="padding: 20px; border-radius: 8px; border: 1px solid #ddd; background-color: #fafafa;">
-        <h2 style="margin: 0 0 5px 0;">Client Background Report</h2>
-        <p style="color: #666; margin: 0 0 15px 0;"><em>Based on Plunket AI Model Analysis</em></p>
+    # Get raw risk flag values from database columns
+    housing_risk_raw = safe_str(data_row.get('housing_risk_flag', ''))
+    impairment_risk_raw = safe_str(data_row.get('impairment_risk_flag', ''))
+    mmh_risk_raw = safe_str(data_row.get('mmh_risk_flag', ''))
+    
+    # Use native Streamlit components for reliable rendering
+    with st.container():
+        st.subheader("Client Background Report")
+        st.caption("Based on Plunket AI Model Analysis")
         
-        <p><strong>Client ID:</strong> {client_id} | <strong>Contact ID:</strong> {contact_id} | <strong>Date:</strong> {date_str}</p>
+        st.markdown(f"**Client ID:** {client_id} | **Contact ID:** {contact_id} | **Date:** {date_str}")
         
-        <hr style="border: 1px solid #ddd; margin: 15px 0;">
+        st.divider()
         
-        <h3 style="margin-top: 15px;">DISCUSSION TOPICS</h3>
-        <ul style="margin: 10px 0;">
-            <li><strong>Housing:</strong> {housing_topics}</li>
-            <li><strong>Impairment:</strong> {impairment_topics}</li>
-            <li><strong>Mental/Maternal Health:</strong> {mmh_topics}</li>
-        </ul>
+        st.markdown("### DISCUSSION TOPICS")
+        st.markdown(f"- **Housing:** {housing_topics}")
+        st.markdown(f"- **Impairment:** {impairment_topics}")
+        st.markdown(f"- **Mental/Maternal Health:** {mmh_topics}")
         
-        <hr style="border: 1px solid #ddd; margin: 15px 0;">
+        st.divider()
         
-        <h3>SUMMARIES</h3>
+        st.markdown("### SUMMARIES")
         
-        <p><strong>Housing Situation:</strong><br>{housing_summary}</p>
+        st.markdown(f"**Housing Situation:**")
+        st.markdown(housing_summary)
         
-        <p><strong>Impairment Status:</strong><br>{impairment_summary}</p>
+        st.markdown(f"**Impairment Status:**")
+        st.markdown(impairment_summary)
         
-        <p><strong>Mental/Maternal Health:</strong><br>{mmh_summary}</p>
+        st.markdown(f"**Mental/Maternal Health:**")
+        st.markdown(mmh_summary)
         
-        <hr style="border: 1px solid #ddd; margin: 15px 0;">
+        st.divider()
         
-        <h3>RISK FLAGS</h3>
-        <ul style="margin: 10px 0;">
-            <li><strong>Housing:</strong> {normalize_flag(housing_risk)}</li>
-            <li><strong>Impairment:</strong> {normalize_flag(impairment_risk)}</li>
-            <li><strong>MMH:</strong> {normalize_flag(mmh_risk)}</li>
-        </ul>
+        st.markdown("### RISK FLAGS")
+        st.markdown(f"- **Housing:** {housing_risk_raw}")
+        st.markdown(f"- **Impairment:** {impairment_risk_raw}")
+        st.markdown(f"- **MMH:** {mmh_risk_raw}")
         
-        <p style="color: #999; text-align: right; margin-top: 30px;"><em>Generated by Plunket AI Model.</em></p>
-    </div>
-    """, unsafe_allow_html=True)
+        st.caption("Generated by Plunket AI Model.")
 
 
 st.set_page_config(
