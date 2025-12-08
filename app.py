@@ -677,38 +677,32 @@ if st.session_state.search_results is not None:
             'MMH Risk': df['mmh_risk_flag'].apply(safe_str)
         })
         
-        st.dataframe(
+        display_df.insert(0, 'Select', False)
+        
+        edited_df = st.data_editor(
             display_df,
-            use_container_width=True,
+            column_config={
+                "Select": st.column_config.CheckboxColumn(
+                    "Select",
+                    help="Select a record",
+                    default=False,
+                    width="small"
+                )
+            },
+            disabled=['Client Name', 'Nurse Name', 'Date', 'Housing Risk', 'Impairment Risk', 'MMH Risk'],
             hide_index=True,
-            height=min(280, 56 * (len(display_df) + 1))
+            use_container_width=True,
+            height=min(280, 56 * (len(display_df) + 1)),
+            key="results_editor"
         )
+        
+        selected_rows = edited_df[edited_df['Select'] == True].index.tolist()
+        if len(selected_rows) > 0:
+            st.session_state.selected_row_index = selected_rows[-1]
+        else:
+            st.session_state.selected_row_index = None
         
         st.caption(f"Showing {len(display_df)} result(s)")
-        
-        options = list(range(len(display_df)))
-        options_with_none = [-1] + options
-        
-        def format_option(i):
-            if i == -1:
-                return "-- Select a record to preview/download --"
-            row = display_df.iloc[i]
-            return f"{row['Client Name']} - {row['Nurse Name']} - {row['Date']}"
-        
-        current_idx = st.session_state.selected_row_index if st.session_state.selected_row_index is not None and 0 <= st.session_state.selected_row_index < len(display_df) else -1
-        
-        selected_option = st.selectbox(
-            "Select a record",
-            options=options_with_none,
-            index=options_with_none.index(current_idx) if current_idx in options_with_none else 0,
-            format_func=format_option,
-            key="row_selectbox"
-        )
-        
-        if selected_option == -1:
-            st.session_state.selected_row_index = None
-        else:
-            st.session_state.selected_row_index = selected_option
 else:
     st.markdown("""
     <div class="empty-state">
@@ -722,7 +716,7 @@ st.markdown('<div class="section-header">Report Actions</div>', unsafe_allow_htm
 
 has_selection = st.session_state.selected_row_index is not None and st.session_state.search_results is not None and not st.session_state.search_results.empty
 
-col_preview, col_download, col_spacer = st.columns([1, 1, 8])
+col_preview, col_download, col_spacer = st.columns([0.8, 0.8, 3])
 
 with col_preview:
     st.markdown('<div class="preview-btn">', unsafe_allow_html=True)
