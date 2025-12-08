@@ -669,6 +669,7 @@ if st.session_state.search_results is not None:
         """, unsafe_allow_html=True)
     else:
         display_df = pd.DataFrame({
+            'Select': [''] * len(df),
             'Client Name': df['client_name'].apply(safe_str),
             'Nurse Name': df['nurse_name'].apply(safe_str),
             'Date': df['createdon'].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notna(x) and hasattr(x, 'strftime') else str(x)[:10] if pd.notna(x) else 'N/A'),
@@ -677,30 +678,26 @@ if st.session_state.search_results is not None:
             'MMH Risk': df['mmh_risk_flag'].apply(safe_str)
         })
         
-        display_df.insert(0, 'Select', False)
+        options = list(range(len(display_df)))
+        default_index = st.session_state.selected_row_index if st.session_state.selected_row_index is not None and st.session_state.selected_row_index < len(options) else 0
         
-        edited_df = st.data_editor(
-            display_df,
-            column_config={
-                "Select": st.column_config.CheckboxColumn(
-                    "Select",
-                    help="Select a record",
-                    default=False,
-                    width="small"
-                )
-            },
-            disabled=['Client Name', 'Nurse Name', 'Date', 'Housing Risk', 'Impairment Risk', 'MMH Risk'],
-            hide_index=True,
-            use_container_width=True,
-            height=min(280, 56 * (len(display_df) + 1)),
-            key="results_editor"
+        selected = st.radio(
+            "Select a record to preview or download",
+            options=options,
+            format_func=lambda x: f"Row {x + 1}: {display_df.iloc[x]['Client Name']} - {display_df.iloc[x]['Nurse Name']}",
+            index=default_index,
+            key="row_selection",
+            horizontal=False
         )
         
-        selected_rows = edited_df[edited_df['Select'] == True].index.tolist()
-        if len(selected_rows) > 0:
-            st.session_state.selected_row_index = selected_rows[-1]
-        else:
-            st.session_state.selected_row_index = None
+        st.session_state.selected_row_index = selected
+        
+        st.dataframe(
+            display_df.drop(columns=['Select']),
+            use_container_width=True,
+            hide_index=True,
+            height=min(280, 56 * (len(display_df) + 1))
+        )
         
         st.caption(f"Showing {len(display_df)} result(s)")
 else:
@@ -716,41 +713,44 @@ st.markdown('<div class="section-header">Report Actions</div>', unsafe_allow_htm
 
 has_selection = st.session_state.selected_row_index is not None and st.session_state.search_results is not None and not st.session_state.search_results.empty
 
-col_preview, col_download, col_spacer = st.columns([0.8, 0.8, 3])
+btn_col, spacer_col = st.columns([2, 8])
 
-with col_preview:
-    st.markdown('<div class="preview-btn">', unsafe_allow_html=True)
-    preview_clicked = st.button(
-        "Preview Report",
-        type="secondary",
-        disabled=not has_selection,
-        key="preview_btn"
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col_download:
-    st.markdown('<div class="download-btn">', unsafe_allow_html=True)
-    if has_selection:
-        selected_idx = st.session_state.selected_row_index
-        data_row = st.session_state.search_results.iloc[selected_idx]
-        pdf_buffer = generate_pdf(data_row)
-        client_name_for_file = safe_str(data_row.get('client_name', 'unknown')).replace(' ', '_')
-        st.download_button(
-            label="Download PDF",
-            data=pdf_buffer,
-            file_name=f"client_report_{client_name_for_file}_{datetime.now().strftime('%Y%m%d')}.pdf",
-            mime="application/pdf",
+with btn_col:
+    btn_inner_col1, btn_inner_col2 = st.columns(2)
+    
+    with btn_inner_col1:
+        st.markdown('<div class="preview-btn">', unsafe_allow_html=True)
+        preview_clicked = st.button(
+            "Preview Report",
             type="secondary",
-            key="download_btn"
+            disabled=not has_selection,
+            key="preview_btn"
         )
-    else:
-        st.button(
-            "Download PDF",
-            type="secondary",
-            disabled=True,
-            key="download_btn_disabled"
-        )
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with btn_inner_col2:
+        st.markdown('<div class="download-btn">', unsafe_allow_html=True)
+        if has_selection:
+            selected_idx = st.session_state.selected_row_index
+            data_row = st.session_state.search_results.iloc[selected_idx]
+            pdf_buffer = generate_pdf(data_row)
+            client_name_for_file = safe_str(data_row.get('client_name', 'unknown')).replace(' ', '_')
+            st.download_button(
+                label="Download PDF",
+                data=pdf_buffer,
+                file_name=f"client_report_{client_name_for_file}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                type="secondary",
+                key="download_btn"
+            )
+        else:
+            st.button(
+                "Download PDF",
+                type="secondary",
+                disabled=True,
+                key="download_btn_disabled"
+            )
+        st.markdown('</div>', unsafe_allow_html=True)
 
 if preview_clicked and has_selection:
     selected_idx = st.session_state.selected_row_index
