@@ -600,6 +600,17 @@ st.markdown("""
     .download-btn button:hover {
         background-color: #3B82F6 !important;
     }
+    /* Radio button alignment with table rows */
+    .results-radio-column [role="radiogroup"] {
+        display: flex;
+        flex-direction: column;
+        row-gap: 14px;
+        align-items: flex-end;
+        padding-right: 0px;
+    }
+    .results-radio-column [role="radiogroup"] label {
+        margin-bottom: 0 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -680,10 +691,11 @@ if st.session_state.search_results is not None:
         options = list(range(len(display_df)))
         default_index = st.session_state.selected_row_index if st.session_state.selected_row_index is not None and st.session_state.selected_row_index < len(options) else 0
         
-        radio_col, table_col = st.columns([0.5, 9.5])
+        radio_col, table_col = st.columns([0.3, 9.7])
         
         with radio_col:
-            st.markdown('<div style="height: 38px;"></div>', unsafe_allow_html=True)
+            st.markdown('<div class="results-radio-column">', unsafe_allow_html=True)
+            st.markdown('<div style="height: 36px;"></div>', unsafe_allow_html=True)
             selected = st.radio(
                 "Select",
                 options=options,
@@ -693,6 +705,7 @@ if st.session_state.search_results is not None:
                 label_visibility="collapsed"
             )
             st.session_state.selected_row_index = selected
+            st.markdown('</div>', unsafe_allow_html=True)
         
         with table_col:
             st.dataframe(
@@ -716,44 +729,41 @@ st.markdown('<div class="section-header">Report Actions</div>', unsafe_allow_htm
 
 has_selection = st.session_state.selected_row_index is not None and st.session_state.search_results is not None and not st.session_state.search_results.empty
 
-btn_col, spacer_col = st.columns([2, 8])
+col_preview, col_download, col_spacer = st.columns([1, 1, 8])
 
-with btn_col:
-    btn_inner_col1, btn_inner_col2 = st.columns(2)
-    
-    with btn_inner_col1:
-        st.markdown('<div class="preview-btn">', unsafe_allow_html=True)
-        preview_clicked = st.button(
-            "Preview Report",
+with col_preview:
+    st.markdown('<div class="preview-btn">', unsafe_allow_html=True)
+    preview_clicked = st.button(
+        "Preview Report",
+        type="secondary",
+        disabled=not has_selection,
+        key="preview_btn"
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col_download:
+    st.markdown('<div class="download-btn">', unsafe_allow_html=True)
+    if has_selection:
+        selected_idx = st.session_state.selected_row_index
+        data_row = st.session_state.search_results.iloc[selected_idx]
+        pdf_buffer = generate_pdf(data_row)
+        client_name_for_file = safe_str(data_row.get('client_name', 'unknown')).replace(' ', '_')
+        st.download_button(
+            label="Download PDF",
+            data=pdf_buffer,
+            file_name=f"client_report_{client_name_for_file}_{datetime.now().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf",
             type="secondary",
-            disabled=not has_selection,
-            key="preview_btn"
+            key="download_btn"
         )
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with btn_inner_col2:
-        st.markdown('<div class="download-btn">', unsafe_allow_html=True)
-        if has_selection:
-            selected_idx = st.session_state.selected_row_index
-            data_row = st.session_state.search_results.iloc[selected_idx]
-            pdf_buffer = generate_pdf(data_row)
-            client_name_for_file = safe_str(data_row.get('client_name', 'unknown')).replace(' ', '_')
-            st.download_button(
-                label="Download PDF",
-                data=pdf_buffer,
-                file_name=f"client_report_{client_name_for_file}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf",
-                type="secondary",
-                key="download_btn"
-            )
-        else:
-            st.button(
-                "Download PDF",
-                type="secondary",
-                disabled=True,
-                key="download_btn_disabled"
-            )
-        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.button(
+            "Download PDF",
+            type="secondary",
+            disabled=True,
+            key="download_btn_disabled"
+        )
+    st.markdown('</div>', unsafe_allow_html=True)
 
 if preview_clicked and has_selection:
     selected_idx = st.session_state.selected_row_index
