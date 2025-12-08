@@ -782,7 +782,11 @@ with btn_container:
 
 if preview_clicked and has_selection:
     selected_idx = st.session_state.selected_row_index
-    st.session_state.report_data = st.session_state.search_results.iloc[selected_idx]
+    new_data = st.session_state.search_results.iloc[selected_idx]
+    if st.session_state.report_data is not None:
+        st.session_state.report_data = None
+    else:
+        st.session_state.report_data = new_data
 
 if st.session_state.report_data is not None:
     st.markdown("---")
