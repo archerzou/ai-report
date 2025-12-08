@@ -669,7 +669,6 @@ if st.session_state.search_results is not None:
         """, unsafe_allow_html=True)
     else:
         display_df = pd.DataFrame({
-            'Select': [''] * len(df),
             'Client Name': df['client_name'].apply(safe_str),
             'Nurse Name': df['nurse_name'].apply(safe_str),
             'Date': df['createdon'].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notna(x) and hasattr(x, 'strftime') else str(x)[:10] if pd.notna(x) else 'N/A'),
@@ -681,23 +680,27 @@ if st.session_state.search_results is not None:
         options = list(range(len(display_df)))
         default_index = st.session_state.selected_row_index if st.session_state.selected_row_index is not None and st.session_state.selected_row_index < len(options) else 0
         
-        selected = st.radio(
-            "Select a record to preview or download",
-            options=options,
-            format_func=lambda x: f"Row {x + 1}: {display_df.iloc[x]['Client Name']} - {display_df.iloc[x]['Nurse Name']}",
-            index=default_index,
-            key="row_selection",
-            horizontal=False
-        )
+        radio_col, table_col = st.columns([0.5, 9.5])
         
-        st.session_state.selected_row_index = selected
+        with radio_col:
+            st.markdown('<div style="height: 38px;"></div>', unsafe_allow_html=True)
+            selected = st.radio(
+                "Select",
+                options=options,
+                format_func=lambda x: "",
+                index=default_index,
+                key="row_selection",
+                label_visibility="collapsed"
+            )
+            st.session_state.selected_row_index = selected
         
-        st.dataframe(
-            display_df.drop(columns=['Select']),
-            use_container_width=True,
-            hide_index=True,
-            height=min(280, 56 * (len(display_df) + 1))
-        )
+        with table_col:
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                hide_index=True,
+                height=min(280, 56 * (len(display_df) + 1))
+            )
         
         st.caption(f"Showing {len(display_df)} result(s)")
 else:
