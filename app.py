@@ -3,6 +3,14 @@ from databricks import sql
 from databricks.sdk.core import Config
 import streamlit as st
 import pandas as pd
+from datetime import datetime, date
+from io import BytesIO
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch, cm
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
 # Ensure environment variable is set correctly
 assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
@@ -10,47 +18,535 @@ assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be se
 # Databricks config
 cfg = Config()
 
-# Query the SQL warehouse with Service Principal credentials
+# Schema definition for the client data table
+SCHEMA = {
+    'koo_clientid': 'string',
+    'koo_contactid': 'string',
+    'createdon': 'date',
+    'response_house': 'string',
+    'response_impa': 'string',
+    'response_mmh': 'string',
+    'housing_summary': 'string',
+    'impairments_summary': 'string',
+    'mmh_summary': 'string',
+    'topic_tags_house': 'string',
+    'topic_tags_impairment': 'string',
+    'topic_tags_mmh': 'string',
+    'housing_risk_flag': 'boolean',
+    'impairment_risk_flag': 'boolean',
+    'mmh_risk_flag': 'boolean'
+}
+
+# Table configuration
+TABLE_NAME = "dev_structured.analytics.all_measures_with_ai"
+
+
 def sql_query_with_service_principal(query: str) -> pd.DataFrame:
     """Execute a SQL query and return the result as a pandas DataFrame."""
     with sql.connect(
         server_hostname=cfg.host,
         http_path=f"/sql/1.0/warehouses/{cfg.warehouse_id}",
-        credentials_provider=lambda: cfg.authenticate  # Uses SP credentials from the environment variables
+        credentials_provider=lambda: cfg.authenticate
     ) as connection:
         with connection.cursor() as cursor:
             cursor.execute(query)
             return cursor.fetchall_arrow().to_pandas()
 
-# Query the SQL warehouse with the user credentials
+
 def sql_query_with_user_token(query: str, user_token: str) -> pd.DataFrame:
     """Execute a SQL query and return the result as a pandas DataFrame."""
     with sql.connect(
         server_hostname=cfg.host,
         http_path=f"/sql/1.0/warehouses/{cfg.warehouse_id}",
-        access_token=user_token  # Pass the user token into the SQL connect to query on behalf of user
+        access_token=user_token
     ) as connection:
         with connection.cursor() as cursor:
             cursor.execute(query)
             return cursor.fetchall_arrow().to_pandas()
 
-st.set_page_config(layout="wide")
 
-st.header("Taxi fare distribution !!! :)")
-col1, col2 = st.columns([3, 1])
-# Extract user access token from the request headers
+def load_client_data(client_id: str, contact_id: str, assessment_date: date, user_token: str = None) -> pd.DataFrame:
+    """
+    Load and filter client data from Databricks table.
+    Returns: pandas DataFrame with filtered results or empty DataFrame if not found.
+    """
+    date_str = assessment_date.strftime('%Y-%m-%d')
+    
+    query = f"""
+    SELECT 
+        koo_clientid,
+        koo_contactid,
+        createdon,
+        response_house,
+        response_impa,
+        response_mmh,
+        housing_summary,
+        impairments_summary,
+        mmh_summary,
+        topic_tags_house,
+        topic_tags_impairment,
+        topic_tags_mmh,
+        housing_risk_flag,
+        impairment_risk_flag,
+        mmh_risk_flag
+    FROM {TABLE_NAME}
+    WHERE koo_clientid = '{client_id}'
+      AND koo_contactid = '{contact_id}'
+      AND DATE(createdon) = '{date_str}'
+    """
+    
+    try:
+        if user_token:
+            df = sql_query_with_user_token(query, user_token)
+        else:
+            df = sql_query_with_service_principal(query)
+        return df
+    except Exception as e:
+        st.error(f"Error loading data: {str(e)}")
+        return pd.DataFrame()
+
+
+def normalize_flag(flag) -> bool:
+    """
+    Normalize a risk flag value to a boolean.
+    Handles bool, None/NaN, int, float, and string values.
+    """
+    if isinstance(flag, bool):
+        return flag
+    
+    if flag is None or (isinstance(flag, float) and pd.isna(flag)):
+        return False
+    
+    if isinstance(flag, (int, float)):
+        return bool(flag)
+    
+    if isinstance(flag, str):
+        v = flag.strip().lower()
+        if v in {"true", "t", "1", "yes", "y"}:
+            return True
+        if v in {"false", "f", "0", "no", "n", ""}:
+            return False
+    
+    return False
+
+
+def get_risk_level(housing_risk, impairment_risk, mmh_risk) -> str:
+    """Determine overall risk level based on individual risk flags."""
+    flags = [
+        normalize_flag(housing_risk),
+        normalize_flag(impairment_risk),
+        normalize_flag(mmh_risk),
+    ]
+    risk_count = sum(flags)
+    
+    if risk_count >= 2:
+        return "HIGH RISK"
+    elif risk_count == 1:
+        return "MODERATE RISK"
+    else:
+        return "LOW RISK"
+
+
+def get_risk_color(risk_level: str) -> colors.Color:
+    """Get color based on risk level."""
+    if risk_level == "HIGH RISK":
+        return colors.HexColor("#C41E3A")
+    elif risk_level == "MODERATE RISK":
+        return colors.HexColor("#FF8C00")
+    else:
+        return colors.HexColor("#228B22")
+
+
+def safe_str(value) -> str:
+    """Safely convert value to string, handling None/NaN values."""
+    if pd.isna(value) or value is None:
+        return "Not available"
+    return str(value)
+
+
+def format_risk_flag(flag) -> str:
+    """Format risk flag for display."""
+    if flag is None or (isinstance(flag, float) and pd.isna(flag)):
+        return "Not assessed"
+    return "HIGH RISK" if normalize_flag(flag) else "LOW RISK"
+
+
+def generate_pdf(data_row: pd.Series) -> BytesIO:
+    """
+    Generate formatted PDF report from data row.
+    Returns: PDF file buffer.
+    """
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=1*cm,
+        leftMargin=1*cm,
+        topMargin=1*cm,
+        bottomMargin=1*cm
+    )
+    
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        textColor=colors.HexColor("#C41E3A"),
+        spaceAfter=6,
+        alignment=TA_LEFT
+    )
+    
+    subtitle_style = ParagraphStyle(
+        'CustomSubtitle',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=colors.HexColor("#666666"),
+        spaceAfter=12
+    )
+    
+    section_header_style = ParagraphStyle(
+        'SectionHeader',
+        parent=styles['Heading2'],
+        fontSize=14,
+        textColor=colors.HexColor("#333333"),
+        spaceBefore=16,
+        spaceAfter=8,
+        borderPadding=4
+    )
+    
+    subsection_style = ParagraphStyle(
+        'SubSection',
+        parent=styles['Heading3'],
+        fontSize=12,
+        textColor=colors.HexColor("#444444"),
+        spaceBefore=12,
+        spaceAfter=6
+    )
+    
+    body_style = ParagraphStyle(
+        'CustomBody',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=colors.HexColor("#333333"),
+        spaceAfter=8,
+        leading=14
+    )
+    
+    risk_high_style = ParagraphStyle(
+        'RiskHigh',
+        parent=styles['Normal'],
+        fontSize=11,
+        textColor=colors.HexColor("#C41E3A"),
+        spaceBefore=4,
+        spaceAfter=4,
+        backColor=colors.HexColor("#FFF0F0"),
+        borderPadding=8
+    )
+    
+    risk_low_style = ParagraphStyle(
+        'RiskLow',
+        parent=styles['Normal'],
+        fontSize=11,
+        textColor=colors.HexColor("#228B22"),
+        spaceBefore=4,
+        spaceAfter=4,
+        backColor=colors.HexColor("#F0FFF0"),
+        borderPadding=8
+    )
+    
+    footer_style = ParagraphStyle(
+        'Footer',
+        parent=styles['Normal'],
+        fontSize=9,
+        textColor=colors.HexColor("#999999"),
+        alignment=TA_RIGHT,
+        spaceBefore=20
+    )
+    
+    housing_risk = data_row.get('housing_risk_flag', False)
+    impairment_risk = data_row.get('impairment_risk_flag', False)
+    mmh_risk = data_row.get('mmh_risk_flag', False)
+    
+    story = []
+    
+    story.append(Paragraph("CLIENT BACKGROUND REPORT", title_style))
+    story.append(Paragraph("Based on Plunket AI Model Analysis", subtitle_style))
+    
+    story.append(HRFlowable(
+        width="100%",
+        thickness=1,
+        color=colors.HexColor("#DDDDDD"),
+        spaceBefore=4,
+        spaceAfter=12
+    ))
+    
+    client_id = safe_str(data_row.get('koo_clientid', ''))
+    contact_id = safe_str(data_row.get('koo_contactid', ''))
+    created_on = data_row.get('createdon', '')
+    if pd.notna(created_on):
+        if hasattr(created_on, 'strftime'):
+            date_str = created_on.strftime('%Y-%m-%d')
+        else:
+            date_str = str(created_on)[:10]
+    else:
+        date_str = "Not available"
+    
+    case_data = [
+        ['Client ID:', client_id, 'Contact ID:', contact_id],
+        ['Date:', date_str, 'Generated:', datetime.now().strftime('%Y-%m-%d %H:%M')]
+    ]
+    
+    case_table = Table(case_data, colWidths=[2.5*cm, 5*cm, 2.5*cm, 5*cm])
+    case_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor("#666666")),
+        ('TEXTCOLOR', (2, 0), (2, -1), colors.HexColor("#666666")),
+        ('TEXTCOLOR', (1, 0), (1, -1), colors.HexColor("#333333")),
+        ('TEXTCOLOR', (3, 0), (3, -1), colors.HexColor("#333333")),
+        ('FONTNAME', (1, 0), (1, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (3, 0), (3, -1), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(case_table)
+    story.append(Spacer(1, 12))
+    
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DDDDDD"), spaceAfter=8))
+    
+    story.append(Paragraph("DISCUSSION TOPICS", section_header_style))
+    
+    housing_topics = safe_str(data_row.get('topic_tags_house', ''))
+    impairment_topics = safe_str(data_row.get('topic_tags_impairment', ''))
+    mmh_topics = safe_str(data_row.get('topic_tags_mmh', ''))
+    
+    story.append(Paragraph(f"&bull; <b>Housing:</b> {housing_topics}", body_style))
+    story.append(Paragraph(f"&bull; <b>Impairment:</b> {impairment_topics}", body_style))
+    story.append(Paragraph(f"&bull; <b>Mental/Maternal Health:</b> {mmh_topics}", body_style))
+    
+    story.append(Spacer(1, 12))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DDDDDD"), spaceAfter=8))
+    
+    story.append(Paragraph("SUMMARIES", section_header_style))
+    
+    story.append(Paragraph("Housing Situation:", subsection_style))
+    housing_summary = safe_str(data_row.get('housing_summary', ''))
+    story.append(Paragraph(housing_summary, body_style))
+    
+    story.append(Paragraph("Impairment Status:", subsection_style))
+    impairment_summary = safe_str(data_row.get('impairments_summary', ''))
+    story.append(Paragraph(impairment_summary, body_style))
+    
+    story.append(Paragraph("Mental/Maternal Health:", subsection_style))
+    mmh_summary = safe_str(data_row.get('mmh_summary', ''))
+    story.append(Paragraph(mmh_summary, body_style))
+    
+    story.append(Spacer(1, 12))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DDDDDD"), spaceAfter=8))
+    
+    story.append(Paragraph("RISK FLAGS", section_header_style))
+    
+    # Use raw risk flag values from database columns
+    housing_risk_raw = safe_str(data_row.get('housing_risk_flag', ''))
+    impairment_risk_raw = safe_str(data_row.get('impairment_risk_flag', ''))
+    mmh_risk_raw = safe_str(data_row.get('mmh_risk_flag', ''))
+    
+    story.append(Paragraph(f"&bull; <b>Housing:</b> {housing_risk_raw}", body_style))
+    story.append(Paragraph(f"&bull; <b>Impairment:</b> {impairment_risk_raw}", body_style))
+    story.append(Paragraph(f"&bull; <b>MMH:</b> {mmh_risk_raw}", body_style))
+    
+    story.append(Spacer(1, 20))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DDDDDD"), spaceAfter=8))
+    
+    story.append(Paragraph("Generated by Plunket AI Model.", footer_style))
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
+def render_report_preview(data_row: pd.Series):
+    """Render a preview of the report in Streamlit using native components."""
+    client_id = safe_str(data_row.get('koo_clientid', ''))
+    contact_id = safe_str(data_row.get('koo_contactid', ''))
+    created_on = data_row.get('createdon', '')
+    if pd.notna(created_on):
+        if hasattr(created_on, 'strftime'):
+            date_str = created_on.strftime('%Y-%m-%d')
+        else:
+            date_str = str(created_on)[:10]
+    else:
+        date_str = "Not available"
+    
+    housing_topics = safe_str(data_row.get('topic_tags_house', ''))
+    impairment_topics = safe_str(data_row.get('topic_tags_impairment', ''))
+    mmh_topics = safe_str(data_row.get('topic_tags_mmh', ''))
+    
+    housing_summary = safe_str(data_row.get('housing_summary', ''))
+    impairment_summary = safe_str(data_row.get('impairments_summary', ''))
+    mmh_summary = safe_str(data_row.get('mmh_summary', ''))
+    
+    # Get raw risk flag values from database columns
+    housing_risk_raw = safe_str(data_row.get('housing_risk_flag', ''))
+    impairment_risk_raw = safe_str(data_row.get('impairment_risk_flag', ''))
+    mmh_risk_raw = safe_str(data_row.get('mmh_risk_flag', ''))
+    
+    # Use native Streamlit components for reliable rendering
+    with st.container():
+        st.subheader("Client Background Report")
+        st.caption("Based on Plunket AI Model Analysis")
+        
+        st.markdown(f"**Client ID:** {client_id} | **Contact ID:** {contact_id} | **Date:** {date_str}")
+        
+        st.divider()
+        
+        st.markdown("### DISCUSSION TOPICS")
+        st.markdown(f"- **Housing:** {housing_topics}")
+        st.markdown(f"- **Impairment:** {impairment_topics}")
+        st.markdown(f"- **Mental/Maternal Health:** {mmh_topics}")
+        
+        st.divider()
+        
+        st.markdown("### SUMMARIES")
+        
+        st.markdown(f"**Housing Situation:**")
+        st.markdown(housing_summary)
+        
+        st.markdown(f"**Impairment Status:**")
+        st.markdown(impairment_summary)
+        
+        st.markdown(f"**Mental/Maternal Health:**")
+        st.markdown(mmh_summary)
+        
+        st.divider()
+        
+        st.markdown("### RISK FLAGS")
+        st.markdown(f"- **Housing:** {housing_risk_raw}")
+        st.markdown(f"- **Impairment:** {impairment_risk_raw}")
+        st.markdown(f"- **MMH:** {mmh_risk_raw}")
+        
+        st.caption("Generated by Plunket AI Model.")
+
+
+st.set_page_config(
+    page_title="Client Report Exporter",
+    page_icon="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>PDF</text></svg>",
+    layout="wide"
+)
+
+st.markdown("""
+<style>
+    .main-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+    .pdf-icon {
+        width: 40px;
+        height: 40px;
+        background-color: #C41E3A;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        margin-right: 15px;
+        font-weight: bold;
+        font-size: 12px;
+    }
+    .stButton > button {
+        background-color: #2563EB;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        font-weight: 500;
+    }
+    .stButton > button:hover {
+        background-color: #1D4ED8;
+    }
+    .download-btn > button {
+        background-color: #C41E3A !important;
+    }
+    .download-btn > button:hover {
+        background-color: #A01830 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="main-header">
+    <div class="pdf-icon">PDF</div>
+    <div>
+        <h1 style="margin: 0; font-size: 28px;">Client Report Exporter</h1>
+        <p style="color: #666; margin: 0;">Select client details to generate and review the background report.</p>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
 user_token = st.context.headers.get('X-Forwarded-Access-Token')
-# Query the SQL data with the user credentials
-data = sql_query_with_user_token("SELECT * FROM samples.nyctaxi.trips LIMIT 5000", user_token=user_token)
-# In order to query with Service Principal credentials, comment the above line and uncomment the below line
-# data = sql_query_with_service_principal("SELECT * FROM samples.nyctaxi.trips LIMIT 5000")
-with col1:
-    st.scatter_chart(data=data, height=400, width=700, y="fare_amount", x="trip_distance")
-with col2:
-    st.subheader("Predict fare")
-    pickup = st.text_input("From (zipcode)", value="10003")
-    dropoff = st.text_input("To (zipcode)", value="11238")
-    d = data[(data['pickup_zip'] == int(pickup)) & (data['dropoff_zip'] == int(dropoff))]
-    st.write(f"# **${d['fare_amount'].mean() if len(d) > 0 else 99:.2f}**")
 
-st.dataframe(data=data, height=600, use_container_width=True)
+st.subheader("Report Generation Inputs")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    client_id = st.text_input("Client ID", placeholder="Enter client ID", key="client_id")
+
+with col2:
+    contact_id = st.text_input("Contact ID", placeholder="Enter contact ID", key="contact_id")
+
+with col3:
+    assessment_date = st.date_input("Report Date", value=date.today(), key="assessment_date")
+
+col_btn, col_spacer = st.columns([1, 3])
+with col_btn:
+    preview_clicked = st.button("Preview Report", type="primary", use_container_width=True)
+
+if 'report_data' not in st.session_state:
+    st.session_state.report_data = None
+
+if preview_clicked:
+    if not client_id or not contact_id:
+        st.error("Please enter both Client ID and Contact ID.")
+    else:
+        with st.spinner("Loading client data..."):
+            df = load_client_data(client_id, contact_id, assessment_date, user_token)
+            
+            if df.empty:
+                st.warning(f"No data found for Client ID: {client_id}, Contact ID: {contact_id}, Date: {assessment_date}")
+                st.session_state.report_data = None
+            else:
+                st.session_state.report_data = df.iloc[0]
+                st.success(f"Data loaded successfully! Found {len(df)} record(s).")
+
+if st.session_state.report_data is not None:
+    data_row = st.session_state.report_data
+    
+    st.markdown("---")
+    
+    header_col1, header_col2 = st.columns([3, 1])
+    with header_col1:
+        st.subheader(f"Report Preview: Client #{safe_str(data_row.get('koo_clientid', ''))}")
+    with header_col2:
+        pdf_buffer = generate_pdf(data_row)
+        st.download_button(
+            label="Download PDF",
+            data=pdf_buffer,
+            file_name=f"client_report_{safe_str(data_row.get('koo_clientid', 'unknown'))}_{datetime.now().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf",
+            type="primary",
+            use_container_width=True
+        )
+    
+    st.markdown("""
+    <div style="background-color: #F9FAFB; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 10px;">
+        <span style="color: #9CA3AF;">Simulated PDF Viewer</span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    render_report_preview(data_row)
+    
+    with st.expander("View Raw Data"):
+        st.dataframe(pd.DataFrame([data_row]), use_container_width=True)
