@@ -741,41 +741,44 @@ st.markdown('<div class="section-header">Report Actions</div>', unsafe_allow_htm
 
 has_selection = st.session_state.selected_row_index is not None and st.session_state.search_results is not None and not st.session_state.search_results.empty
 
-col_preview, col_download, col_spacer = st.columns([0.8, 0.8, 3])
+btn_container, spacer = st.columns([3, 7])
 
-with col_preview:
-    st.markdown('<div class="preview-btn">', unsafe_allow_html=True)
-    preview_clicked = st.button(
-        "Preview Report",
-        type="secondary",
-        disabled=not has_selection,
-        key="preview_btn"
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col_download:
-    st.markdown('<div class="download-btn">', unsafe_allow_html=True)
-    if has_selection:
-        selected_idx = st.session_state.selected_row_index
-        data_row = st.session_state.search_results.iloc[selected_idx]
-        pdf_buffer = generate_pdf(data_row)
-        client_name_for_file = safe_str(data_row.get('client_name', 'unknown')).replace(' ', '_')
-        st.download_button(
-            label="Download PDF",
-            data=pdf_buffer,
-            file_name=f"client_report_{client_name_for_file}_{datetime.now().strftime('%Y%m%d')}.pdf",
-            mime="application/pdf",
+with btn_container:
+    col_preview, col_download = st.columns(2)
+    
+    with col_preview:
+        st.markdown('<div class="preview-btn">', unsafe_allow_html=True)
+        preview_clicked = st.button(
+            "Preview Report",
             type="secondary",
-            key="download_btn"
+            disabled=not has_selection,
+            key="preview_btn"
         )
-    else:
-        st.button(
-            "Download PDF",
-            type="secondary",
-            disabled=True,
-            key="download_btn_disabled"
-        )
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with col_download:
+        st.markdown('<div class="download-btn">', unsafe_allow_html=True)
+        if has_selection:
+            selected_idx = st.session_state.selected_row_index
+            data_row = st.session_state.search_results.iloc[selected_idx]
+            pdf_buffer = generate_pdf(data_row)
+            client_name_for_file = safe_str(data_row.get('client_name', 'unknown')).replace(' ', '_')
+            st.download_button(
+                label="Download PDF",
+                data=pdf_buffer,
+                file_name=f"client_report_{client_name_for_file}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                type="secondary",
+                key="download_btn"
+            )
+        else:
+            st.button(
+                "Download PDF",
+                type="secondary",
+                disabled=True,
+                key="download_btn_disabled"
+            )
+        st.markdown('</div>', unsafe_allow_html=True)
 
 if preview_clicked and has_selection:
     selected_idx = st.session_state.selected_row_index
