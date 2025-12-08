@@ -600,17 +600,6 @@ st.markdown("""
     .download-btn button:hover {
         background-color: #3B82F6 !important;
     }
-    /* Radio button alignment with table rows */
-    .results-radio-column [role="radiogroup"] {
-        display: flex;
-        flex-direction: column;
-        row-gap: 14px;
-        align-items: flex-end;
-        padding-right: 0px;
-    }
-    .results-radio-column [role="radiogroup"] label {
-        margin-bottom: 0 !important;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -688,34 +677,38 @@ if st.session_state.search_results is not None:
             'MMH Risk': df['mmh_risk_flag'].apply(safe_str)
         })
         
-        options = list(range(len(display_df)))
-        default_index = st.session_state.selected_row_index if st.session_state.selected_row_index is not None and st.session_state.selected_row_index < len(options) else 0
-        
-        radio_col, table_col = st.columns([0.3, 9.7])
-        
-        with radio_col:
-            st.markdown('<div class="results-radio-column">', unsafe_allow_html=True)
-            st.markdown('<div style="height: 36px;"></div>', unsafe_allow_html=True)
-            selected = st.radio(
-                "Select",
-                options=options,
-                format_func=lambda x: "",
-                index=default_index,
-                key="row_selection",
-                label_visibility="collapsed"
-            )
-            st.session_state.selected_row_index = selected
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        with table_col:
-            st.dataframe(
-                display_df,
-                use_container_width=True,
-                hide_index=True,
-                height=min(280, 56 * (len(display_df) + 1))
-            )
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            hide_index=True,
+            height=min(280, 56 * (len(display_df) + 1))
+        )
         
         st.caption(f"Showing {len(display_df)} result(s)")
+        
+        options = list(range(len(display_df)))
+        options_with_none = [-1] + options
+        
+        def format_option(i):
+            if i == -1:
+                return "-- Select a record to preview/download --"
+            row = display_df.iloc[i]
+            return f"{row['Client Name']} - {row['Nurse Name']} - {row['Date']}"
+        
+        current_idx = st.session_state.selected_row_index if st.session_state.selected_row_index is not None and 0 <= st.session_state.selected_row_index < len(display_df) else -1
+        
+        selected_option = st.selectbox(
+            "Select a record",
+            options=options_with_none,
+            index=options_with_none.index(current_idx) if current_idx in options_with_none else 0,
+            format_func=format_option,
+            key="row_selectbox"
+        )
+        
+        if selected_option == -1:
+            st.session_state.selected_row_index = None
+        else:
+            st.session_state.selected_row_index = selected_option
 else:
     st.markdown("""
     <div class="empty-state">
