@@ -22,6 +22,8 @@ cfg = Config()
 SCHEMA = {
     'koo_clientid': 'string',
     'koo_contactid': 'string',
+    'client_name': 'string',
+    'nurse_name': 'string',
     'createdon': 'date',
     'response_house': 'string',
     'response_impa': 'string',
@@ -32,9 +34,9 @@ SCHEMA = {
     'topic_tags_house': 'string',
     'topic_tags_impairment': 'string',
     'topic_tags_mmh': 'string',
-    'housing_risk_flag': 'boolean',
-    'impairment_risk_flag': 'boolean',
-    'mmh_risk_flag': 'boolean'
+    'housing_risk_flag': 'string',
+    'impairment_risk_flag': 'string',
+    'mmh_risk_flag': 'string'
 }
 
 # Table configuration
@@ -65,6 +67,66 @@ def sql_query_with_user_token(query: str, user_token: str) -> pd.DataFrame:
             return cursor.fetchall_arrow().to_pandas()
 
 
+def search_client_data(client_name: str = None, nurse_name: str = None, assessment_date: date = None, user_token: str = None) -> pd.DataFrame:
+    """
+    Search client data from Databricks table with partial matching.
+    At least one search parameter must be provided.
+    Returns: pandas DataFrame with search results or empty DataFrame if not found.
+    """
+    conditions = []
+    
+    if client_name and client_name.strip():
+        escaped_name = client_name.strip().replace("'", "''")
+        conditions.append(f"LOWER(client_name) LIKE LOWER('%{escaped_name}%')")
+    
+    if nurse_name and nurse_name.strip():
+        escaped_name = nurse_name.strip().replace("'", "''")
+        conditions.append(f"LOWER(nurse_name) LIKE LOWER('%{escaped_name}%')")
+    
+    if assessment_date:
+        date_str = assessment_date.strftime('%Y-%m-%d')
+        conditions.append(f"DATE(createdon) = '{date_str}'")
+    
+    if not conditions:
+        return pd.DataFrame()
+    
+    where_clause = " AND ".join(conditions)
+    
+    query = f"""
+    SELECT 
+        koo_clientid,
+        koo_contactid,
+        client_name,
+        nurse_name,
+        createdon,
+        response_house,
+        response_impa,
+        response_mmh,
+        housing_summary,
+        impairments_summary,
+        mmh_summary,
+        topic_tags_house,
+        topic_tags_impairment,
+        topic_tags_mmh,
+        housing_risk_flag,
+        impairment_risk_flag,
+        mmh_risk_flag
+    FROM {TABLE_NAME}
+    WHERE {where_clause}
+    ORDER BY createdon DESC
+    """
+    
+    try:
+        if user_token:
+            df = sql_query_with_user_token(query, user_token)
+        else:
+            df = sql_query_with_service_principal(query)
+        return df
+    except Exception as e:
+        st.error(f"Error searching data: {str(e)}")
+        return pd.DataFrame()
+
+
 def load_client_data(client_id: str, contact_id: str, assessment_date: date, user_token: str = None) -> pd.DataFrame:
     """
     Load and filter client data from Databricks table.
@@ -76,6 +138,8 @@ def load_client_data(client_id: str, contact_id: str, assessment_date: date, use
     SELECT 
         koo_clientid,
         koo_contactid,
+        client_name,
+        nurse_name,
         createdon,
         response_house,
         response_impa,
@@ -281,8 +345,8 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
         spaceAfter=12
     ))
     
-    client_id = safe_str(data_row.get('koo_clientid', ''))
-    contact_id = safe_str(data_row.get('koo_contactid', ''))
+    client_name = safe_str(data_row.get('client_name', ''))
+    nurse_name = safe_str(data_row.get('nurse_name', ''))
     created_on = data_row.get('createdon', '')
     if pd.notna(created_on):
         if hasattr(created_on, 'strftime'):
@@ -293,7 +357,7 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
         date_str = "Not available"
     
     case_data = [
-        ['Client ID:', client_id, 'Contact ID:', contact_id],
+        ['Client:', client_name, 'Nurse:', nurse_name],
         ['Date:', date_str, 'Generated:', datetime.now().strftime('%Y-%m-%d %H:%M')]
     ]
     
@@ -368,8 +432,8 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
 
 def render_report_preview(data_row: pd.Series):
     """Render a preview of the report in Streamlit using native components."""
-    client_id = safe_str(data_row.get('koo_clientid', ''))
-    contact_id = safe_str(data_row.get('koo_contactid', ''))
+    client_name = safe_str(data_row.get('client_name', ''))
+    nurse_name = safe_str(data_row.get('nurse_name', ''))
     created_on = data_row.get('createdon', '')
     if pd.notna(created_on):
         if hasattr(created_on, 'strftime'):
@@ -397,7 +461,7 @@ def render_report_preview(data_row: pd.Series):
         st.subheader("Client Background Report")
         st.caption("Based on Plunket AI Model Analysis")
         
-        st.markdown(f"**Client ID:** {client_id} | **Contact ID:** {contact_id} | **Date:** {date_str}")
+        st.markdown(f"**Client:** {client_name} | **Nurse:** {nurse_name} | **Date:** {date_str}")
         
         st.divider()
         
@@ -430,22 +494,25 @@ def render_report_preview(data_row: pd.Series):
 
 
 st.set_page_config(
-    page_title="Client Report Exporter",
+    page_title="Healthcare Dashboard",
     page_icon="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>PDF</text></svg>",
     layout="wide"
 )
 
 st.markdown("""
 <style>
+    .stApp {
+        background-color: #0D1117;
+    }
     .main-header {
         display: flex;
         align-items: center;
-        margin-bottom: 10px;
+        margin-bottom: 20px;
     }
     .pdf-icon {
         width: 40px;
         height: 40px;
-        background-color: #C41E3A;
+        background-color: #E91E63;
         color: white;
         display: flex;
         align-items: center;
@@ -455,22 +522,62 @@ st.markdown("""
         font-weight: bold;
         font-size: 12px;
     }
+    .section-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 16px;
+        color: #E6EDF3;
+    }
+    .section-header::before {
+        content: '';
+        width: 4px;
+        height: 24px;
+        background-color: #E91E63;
+        margin-right: 12px;
+        border-radius: 2px;
+    }
     .stButton > button {
-        background-color: #2563EB;
-        color: white;
+        background-color: #E91E63 !important;
+        color: white !important;
         border: none;
         padding: 10px 20px;
         border-radius: 6px;
         font-weight: 500;
     }
     .stButton > button:hover {
-        background-color: #1D4ED8;
+        background-color: #C2185B !important;
     }
-    .download-btn > button {
-        background-color: #C41E3A !important;
+    .stButton > button:disabled {
+        background-color: #30363D !important;
+        color: #8B949E !important;
     }
-    .download-btn > button:hover {
-        background-color: #A01830 !important;
+    .card {
+        background-color: #161B22;
+        border: 1px solid #30363D;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 16px;
+    }
+    .stTextInput > div > div > input {
+        background-color: #0D1117;
+        border: 1px solid #30363D;
+        color: #E6EDF3;
+    }
+    .stDateInput > div > div > input {
+        background-color: #0D1117;
+        border: 1px solid #30363D;
+        color: #E6EDF3;
+    }
+    h1, h2, h3, p, label {
+        color: #E6EDF3 !important;
+    }
+    .stDataFrame {
+        background-color: #161B22;
+    }
+    .empty-state {
+        text-align: center;
+        padding: 40px;
+        color: #8B949E;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -479,70 +586,159 @@ st.markdown("""
 <div class="main-header">
     <div class="pdf-icon">PDF</div>
     <div>
-        <h1 style="margin: 0; font-size: 28px;">Client Report Exporter</h1>
-        <p style="color: #666; margin: 0;">Select client details to generate and review the background report.</p>
+        <h1 style="margin: 0; font-size: 28px; color: #E6EDF3;">Healthcare Dashboard</h1>
+        <p style="color: #8B949E; margin: 0;">Search for client records and generate reports.</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 user_token = st.context.headers.get('X-Forwarded-Access-Token')
 
-st.subheader("Report Generation Inputs")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    client_id = st.text_input("Client ID", placeholder="Enter client ID", key="client_id")
-
-with col2:
-    contact_id = st.text_input("Contact ID", placeholder="Enter contact ID", key="contact_id")
-
-with col3:
-    assessment_date = st.date_input("Report Date", value=date.today(), key="assessment_date")
-
-col_btn, col_spacer = st.columns([1, 3])
-with col_btn:
-    preview_clicked = st.button("Preview Report", type="primary", use_container_width=True)
-
+if 'search_results' not in st.session_state:
+    st.session_state.search_results = None
+if 'selected_row_index' not in st.session_state:
+    st.session_state.selected_row_index = None
 if 'report_data' not in st.session_state:
     st.session_state.report_data = None
 
-if preview_clicked:
-    if not client_id or not contact_id:
-        st.error("Please enter both Client ID and Contact ID.")
-    else:
-        with st.spinner("Loading client data..."):
-            df = load_client_data(client_id, contact_id, assessment_date, user_token)
-            
-            if df.empty:
-                st.warning(f"No data found for Client ID: {client_id}, Contact ID: {contact_id}, Date: {assessment_date}")
-                st.session_state.report_data = None
-            else:
-                st.session_state.report_data = df.iloc[0]
-                st.success(f"Data loaded successfully! Found {len(df)} record(s).")
+st.markdown('<div class="section-header">Search Criteria</div>', unsafe_allow_html=True)
 
-if st.session_state.report_data is not None:
-    data_row = st.session_state.report_data
+col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+
+with col1:
+    client_name_input = st.text_input("Client Name", placeholder="Enter client name", key="client_name_input")
+
+with col2:
+    nurse_name_input = st.text_input("Nurse Name", placeholder="Enter nurse name", key="nurse_name_input")
+
+with col3:
+    report_date_input = st.date_input("Report Date", value=None, key="report_date_input")
+
+with col4:
+    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+    search_clicked = st.button("Search", type="primary", use_container_width=True, key="search_btn")
+
+if search_clicked:
+    if not client_name_input and not nurse_name_input and not report_date_input:
+        st.error("Please enter at least one search criteria (Client Name, Nurse Name, or Report Date).")
+    else:
+        with st.spinner("Searching..."):
+            df = search_client_data(
+                client_name=client_name_input if client_name_input else None,
+                nurse_name=nurse_name_input if nurse_name_input else None,
+                assessment_date=report_date_input if report_date_input else None,
+                user_token=user_token
+            )
+            st.session_state.search_results = df
+            st.session_state.selected_row_index = None
+            st.session_state.report_data = None
+
+st.markdown("---")
+
+st.markdown('<div class="section-header">Search Results</div>', unsafe_allow_html=True)
+
+if st.session_state.search_results is not None:
+    df = st.session_state.search_results
     
-    st.markdown("---")
-    
-    header_col1, header_col2 = st.columns([3, 1])
-    with header_col1:
-        st.subheader(f"Report Preview: Client #{safe_str(data_row.get('koo_clientid', ''))}")
-    with header_col2:
+    if df.empty:
+        st.markdown("""
+        <div class="empty-state">
+            <p>No records found. Try adjusting your search criteria.</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        display_df = pd.DataFrame({
+            'Client Name': df['client_name'].apply(safe_str),
+            'Nurse Name': df['nurse_name'].apply(safe_str),
+            'Date': df['createdon'].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notna(x) and hasattr(x, 'strftime') else str(x)[:10] if pd.notna(x) else 'N/A'),
+            'Housing Risk': df['housing_risk_flag'].apply(safe_str),
+            'Impairment Risk': df['impairment_risk_flag'].apply(safe_str),
+            'MMH Risk': df['mmh_risk_flag'].apply(safe_str)
+        })
+        
+        options = list(range(len(display_df)))
+        
+        selected = st.radio(
+            "Select a record to preview or download",
+            options=options,
+            format_func=lambda x: f"{display_df.iloc[x]['Client Name']} - {display_df.iloc[x]['Nurse Name']} - {display_df.iloc[x]['Date']}",
+            key="row_selection",
+            horizontal=False
+        )
+        
+        st.session_state.selected_row_index = selected
+        
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            hide_index=True,
+            height=min(280, 56 * (len(display_df) + 1))
+        )
+        
+        st.caption(f"Showing {len(display_df)} result(s)")
+else:
+    st.markdown("""
+    <div class="empty-state">
+        <p>Enter search criteria above and click Search to find client records.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("---")
+
+st.markdown('<div class="section-header">Report Actions</div>', unsafe_allow_html=True)
+
+has_selection = st.session_state.selected_row_index is not None and st.session_state.search_results is not None and not st.session_state.search_results.empty
+
+col_preview, col_download, col_spacer = st.columns([1, 1, 2])
+
+with col_preview:
+    preview_clicked = st.button(
+        "Preview Report",
+        type="primary",
+        use_container_width=True,
+        disabled=not has_selection,
+        key="preview_btn"
+    )
+
+with col_download:
+    if has_selection:
+        selected_idx = st.session_state.selected_row_index
+        data_row = st.session_state.search_results.iloc[selected_idx]
         pdf_buffer = generate_pdf(data_row)
+        client_name_for_file = safe_str(data_row.get('client_name', 'unknown')).replace(' ', '_')
         st.download_button(
             label="Download PDF",
             data=pdf_buffer,
-            file_name=f"client_report_{safe_str(data_row.get('koo_clientid', 'unknown'))}_{datetime.now().strftime('%Y%m%d')}.pdf",
+            file_name=f"client_report_{client_name_for_file}_{datetime.now().strftime('%Y%m%d')}.pdf",
             mime="application/pdf",
             type="primary",
-            use_container_width=True
+            use_container_width=True,
+            key="download_btn"
         )
+    else:
+        st.button(
+            "Download PDF",
+            type="primary",
+            use_container_width=True,
+            disabled=True,
+            key="download_btn_disabled"
+        )
+
+if preview_clicked and has_selection:
+    selected_idx = st.session_state.selected_row_index
+    st.session_state.report_data = st.session_state.search_results.iloc[selected_idx]
+
+if st.session_state.report_data is not None:
+    st.markdown("---")
+    
+    data_row = st.session_state.report_data
+    client_name = safe_str(data_row.get('client_name', ''))
+    
+    st.markdown(f'<div class="section-header">Report Preview: {client_name}</div>', unsafe_allow_html=True)
     
     st.markdown("""
-    <div style="background-color: #F9FAFB; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 10px;">
-        <span style="color: #9CA3AF;">Simulated PDF Viewer</span>
+    <div style="background-color: #161B22; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 10px; border: 1px solid #30363D;">
+        <span style="color: #8B949E;">Report Preview</span>
     </div>
     """, unsafe_allow_html=True)
     
