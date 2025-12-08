@@ -621,6 +621,8 @@ if 'selected_row_index' not in st.session_state:
     st.session_state.selected_row_index = None
 if 'report_data' not in st.session_state:
     st.session_state.report_data = None
+if 'selection_mask' not in st.session_state:
+    st.session_state.selection_mask = []
 
 st.markdown('<div class="section-header">Search Criteria</div>', unsafe_allow_html=True)
 
@@ -653,6 +655,7 @@ if search_clicked:
             st.session_state.search_results = df
             st.session_state.selected_row_index = None
             st.session_state.report_data = None
+            st.session_state.selection_mask = [False] * len(df) if not df.empty else []
 
 st.markdown("---")
 
@@ -677,14 +680,22 @@ if st.session_state.search_results is not None:
             'MMH Risk': df['mmh_risk_flag'].apply(safe_str)
         })
         
-        display_df.insert(0, 'Select', False)
+        n_rows = len(display_df)
+        
+        if len(st.session_state.selection_mask) != n_rows:
+            st.session_state.selection_mask = [False] * n_rows
+        
+        previous_mask = st.session_state.selection_mask.copy()
+        
+        editor_df = display_df.copy()
+        editor_df.insert(0, 'Select', previous_mask)
         
         edited_df = st.data_editor(
-            display_df,
+            editor_df,
             column_config={
                 "Select": st.column_config.CheckboxColumn(
                     "Select",
-                    help="Select a record",
+                    help="Select a record (only one can be selected)",
                     default=False,
                     width="small"
                 )
@@ -692,17 +703,31 @@ if st.session_state.search_results is not None:
             disabled=['Client Name', 'Nurse Name', 'Date', 'Housing Risk', 'Impairment Risk', 'MMH Risk'],
             hide_index=True,
             use_container_width=True,
-            height=min(280, 56 * (len(display_df) + 1)),
+            height=min(280, 56 * (n_rows + 1)),
             key="results_editor"
         )
         
-        selected_rows = edited_df[edited_df['Select'] == True].index.tolist()
-        if len(selected_rows) > 0:
-            st.session_state.selected_row_index = selected_rows[-1]
+        new_mask = edited_df['Select'].tolist()
+        
+        if sum(new_mask) > 1:
+            changed_indices = [i for i, (old, new) in enumerate(zip(previous_mask, new_mask)) if old != new]
+            if changed_indices:
+                selected_idx = changed_indices[-1]
+            else:
+                selected_idx = next(i for i, v in enumerate(new_mask) if v)
+            new_mask = [i == selected_idx for i in range(n_rows)]
+            st.session_state.selection_mask = new_mask
+            st.session_state.selected_row_index = selected_idx
+            st.rerun()
+        elif sum(new_mask) == 1:
+            selected_idx = next(i for i, v in enumerate(new_mask) if v)
+            st.session_state.selection_mask = new_mask
+            st.session_state.selected_row_index = selected_idx
         else:
+            st.session_state.selection_mask = new_mask
             st.session_state.selected_row_index = None
         
-        st.caption(f"Showing {len(display_df)} result(s)")
+        st.caption(f"Showing {n_rows} result(s)")
 else:
     st.markdown("""
     <div class="empty-state">
