@@ -18,29 +18,43 @@ assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be se
 # Databricks config
 cfg = Config()
 
-# Schema definition for the client data table
-SCHEMA = {
+# Schema definition for the client data table (search table)
+SCHEMA_SEARCH = {
     'koo_clientid': 'string',
     'koo_contactid': 'string',
     'client_name': 'string',
-    'nurse_name': 'string',
+    'client_nhi': 'string',
     'createdon': 'date',
     'response_house': 'string',
     'response_impa': 'string',
-    'response_mmh': 'string',
-    'housing_summary': 'string',
-    'impairments_summary': 'string',
-    'mmh_summary': 'string',
+    'response_mmh': 'string'
+}
+
+# Schema definition for the report table
+SCHEMA_REPORT = {
+    'koo_clientid': 'string',
+    'client_name': 'string',
+    'client_nhi': 'string',
+    'dhb': 'string',
+    'ethnicity': 'string',
+    'domicile': 'string',
+    'gender': 'string',
+    'primary_caregiver': 'string',
+    'well_child_level_of_need': 'string',
     'topic_tags_house': 'string',
     'topic_tags_impairment': 'string',
     'topic_tags_mmh': 'string',
+    'housing_summary': 'string',
+    'impairments_summary': 'string',
+    'mmh_summary': 'string',
     'housing_risk_flag': 'string',
     'impairment_risk_flag': 'string',
     'mmh_risk_flag': 'string'
 }
 
 # Table configuration
-TABLE_NAME = "dev_structured.analytics.all_measures_with_ai"
+TABLE_NAME_SEARCH = "dev_structured.analytics.all_measures"
+TABLE_NAME_REPORT = "dev_structured.analytics.all_measures_with_ai"
 
 
 def sql_query_with_service_principal(query: str) -> pd.DataFrame:
@@ -67,7 +81,7 @@ def sql_query_with_user_token(query: str, user_token: str) -> pd.DataFrame:
             return cursor.fetchall_arrow().to_pandas()
 
 
-def search_client_data(client_name: str = None, nurse_name: str = None, assessment_date: date = None, user_token: str = None) -> pd.DataFrame:
+def search_client_data(client_name: str = None, client_nhi: str = None, assessment_date: date = None, user_token: str = None) -> pd.DataFrame:
     """
     Search client data from Databricks table with partial matching.
     At least one search parameter must be provided.
@@ -79,9 +93,9 @@ def search_client_data(client_name: str = None, nurse_name: str = None, assessme
         escaped_name = client_name.strip().replace("'", "''")
         conditions.append(f"LOWER(client_name) LIKE LOWER('%{escaped_name}%')")
     
-    if nurse_name and nurse_name.strip():
-        escaped_name = nurse_name.strip().replace("'", "''")
-        conditions.append(f"LOWER(nurse_name) LIKE LOWER('%{escaped_name}%')")
+    if client_nhi and client_nhi.strip():
+        escaped_nhi = client_nhi.strip().replace("'", "''")
+        conditions.append(f"LOWER(client_nhi) LIKE LOWER('%{escaped_nhi}%')")
     
     if assessment_date:
         date_str = assessment_date.strftime('%Y-%m-%d')
@@ -97,21 +111,12 @@ def search_client_data(client_name: str = None, nurse_name: str = None, assessme
         koo_clientid,
         koo_contactid,
         client_name,
-        nurse_name,
+        client_nhi,
         createdon,
         response_house,
         response_impa,
-        response_mmh,
-        housing_summary,
-        impairments_summary,
-        mmh_summary,
-        topic_tags_house,
-        topic_tags_impairment,
-        topic_tags_mmh,
-        housing_risk_flag,
-        impairment_risk_flag,
-        mmh_risk_flag
-    FROM {TABLE_NAME}
+        response_mmh
+    FROM {TABLE_NAME_SEARCH}
     WHERE {where_clause}
     ORDER BY createdon DESC
     """
@@ -127,36 +132,36 @@ def search_client_data(client_name: str = None, nurse_name: str = None, assessme
         return pd.DataFrame()
 
 
-def load_client_data(client_id: str, contact_id: str, assessment_date: date, user_token: str = None) -> pd.DataFrame:
+def load_report_data(client_id: str, user_token: str = None) -> pd.DataFrame:
     """
-    Load and filter client data from Databricks table.
-    Returns: pandas DataFrame with filtered results or empty DataFrame if not found.
+    Load report data from Databricks table by koo_clientid.
+    Returns: pandas DataFrame with report data or empty DataFrame if not found.
     """
-    date_str = assessment_date.strftime('%Y-%m-%d')
+    escaped_client_id = client_id.replace("'", "''")
     
     query = f"""
     SELECT 
         koo_clientid,
-        koo_contactid,
         client_name,
-        nurse_name,
-        createdon,
-        response_house,
-        response_impa,
-        response_mmh,
-        housing_summary,
-        impairments_summary,
-        mmh_summary,
+        client_nhi,
+        dhb,
+        ethnicity,
+        domicile,
+        gender,
+        primary_caregiver,
+        well_child_level_of_need,
         topic_tags_house,
         topic_tags_impairment,
         topic_tags_mmh,
+        housing_summary,
+        impairments_summary,
+        mmh_summary,
         housing_risk_flag,
         impairment_risk_flag,
         mmh_risk_flag
-    FROM {TABLE_NAME}
-    WHERE koo_clientid = '{client_id}'
-      AND koo_contactid = '{contact_id}'
-      AND DATE(createdon) = '{date_str}'
+    FROM {TABLE_NAME_REPORT}
+    WHERE koo_clientid = '{escaped_client_id}'
+    LIMIT 1
     """
     
     try:
@@ -166,7 +171,7 @@ def load_client_data(client_id: str, contact_id: str, assessment_date: date, use
             df = sql_query_with_service_principal(query)
         return df
     except Exception as e:
-        st.error(f"Error loading data: {str(e)}")
+        st.error(f"Error loading report data: {str(e)}")
         return pd.DataFrame()
 
 
@@ -328,10 +333,6 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
         spaceBefore=20
     )
     
-    housing_risk = data_row.get('housing_risk_flag', False)
-    impairment_risk = data_row.get('impairment_risk_flag', False)
-    mmh_risk = data_row.get('mmh_risk_flag', False)
-    
     story = []
     
     story.append(Paragraph("CLIENT BACKGROUND REPORT", title_style))
@@ -345,24 +346,28 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
         spaceAfter=12
     ))
     
-    client_name = safe_str(data_row.get('client_name', ''))
-    nurse_name = safe_str(data_row.get('nurse_name', ''))
-    created_on = data_row.get('createdon', '')
-    if pd.notna(created_on):
-        if hasattr(created_on, 'strftime'):
-            date_str = created_on.strftime('%Y-%m-%d')
-        else:
-            date_str = str(created_on)[:10]
-    else:
-        date_str = "Not available"
+    # CLIENT INFORMATION section
+    story.append(Paragraph("CLIENT INFORMATION", section_header_style))
     
-    case_data = [
-        ['Client:', client_name, 'Nurse:', nurse_name],
-        ['Date:', date_str, 'Generated:', datetime.now().strftime('%Y-%m-%d %H:%M')]
+    client_name = safe_str(data_row.get('client_name', ''))
+    client_nhi = safe_str(data_row.get('client_nhi', ''))
+    dhb = safe_str(data_row.get('dhb', ''))
+    ethnicity = safe_str(data_row.get('ethnicity', ''))
+    domicile = safe_str(data_row.get('domicile', ''))
+    gender = safe_str(data_row.get('gender', ''))
+    primary_caregiver = safe_str(data_row.get('primary_caregiver', ''))
+    well_child_level_of_need = safe_str(data_row.get('well_child_level_of_need', ''))
+    
+    client_info_data = [
+        ['Client Name:', client_name, 'Client NHI:', client_nhi],
+        ['DHB:', dhb, 'Ethnicity:', ethnicity],
+        ['Domicile:', domicile, 'Gender:', gender],
+        ['Primary Caregiver:', primary_caregiver, 'Well Child Level of Need:', well_child_level_of_need],
+        ['Generated:', datetime.now().strftime('%Y-%m-%d %H:%M'), '', '']
     ]
     
-    case_table = Table(case_data, colWidths=[2.5*cm, 5*cm, 2.5*cm, 5*cm])
-    case_table.setStyle(TableStyle([
+    client_info_table = Table(client_info_data, colWidths=[3.5*cm, 4.5*cm, 4*cm, 4.5*cm])
+    client_info_table.setStyle(TableStyle([
         ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
         ('FONTSIZE', (0, 0), (-1, -1), 10),
         ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor("#666666")),
@@ -374,7 +379,7 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
         ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ('TOPPADDING', (0, 0), (-1, -1), 6),
     ]))
-    story.append(case_table)
+    story.append(client_info_table)
     story.append(Spacer(1, 12))
     
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DDDDDD"), spaceAfter=8))
@@ -432,26 +437,27 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
 
 def render_report_preview(data_row: pd.Series):
     """Render a preview of the report in Streamlit using native components."""
+    # Client information
     client_name = safe_str(data_row.get('client_name', ''))
-    nurse_name = safe_str(data_row.get('nurse_name', ''))
-    created_on = data_row.get('createdon', '')
-    if pd.notna(created_on):
-        if hasattr(created_on, 'strftime'):
-            date_str = created_on.strftime('%Y-%m-%d')
-        else:
-            date_str = str(created_on)[:10]
-    else:
-        date_str = "Not available"
+    client_nhi = safe_str(data_row.get('client_nhi', ''))
+    dhb = safe_str(data_row.get('dhb', ''))
+    ethnicity = safe_str(data_row.get('ethnicity', ''))
+    domicile = safe_str(data_row.get('domicile', ''))
+    gender = safe_str(data_row.get('gender', ''))
+    primary_caregiver = safe_str(data_row.get('primary_caregiver', ''))
+    well_child_level_of_need = safe_str(data_row.get('well_child_level_of_need', ''))
     
+    # Discussion topics
     housing_topics = safe_str(data_row.get('topic_tags_house', ''))
     impairment_topics = safe_str(data_row.get('topic_tags_impairment', ''))
     mmh_topics = safe_str(data_row.get('topic_tags_mmh', ''))
     
+    # Summaries
     housing_summary = safe_str(data_row.get('housing_summary', ''))
     impairment_summary = safe_str(data_row.get('impairments_summary', ''))
     mmh_summary = safe_str(data_row.get('mmh_summary', ''))
     
-    # Get raw risk flag values from database columns
+    # Risk flags
     housing_risk_raw = safe_str(data_row.get('housing_risk_flag', ''))
     impairment_risk_raw = safe_str(data_row.get('impairment_risk_flag', ''))
     mmh_risk_raw = safe_str(data_row.get('mmh_risk_flag', ''))
@@ -461,10 +467,25 @@ def render_report_preview(data_row: pd.Series):
         st.subheader("Client Background Report")
         st.caption("Based on Plunket AI Model Analysis")
         
-        st.markdown(f"**Client:** {client_name} | **Nurse:** {nurse_name} | **Date:** {date_str}")
+        st.divider()
+        
+        # CLIENT INFORMATION section
+        st.markdown("### CLIENT INFORMATION")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(f"**Client Name:** {client_name}")
+            st.markdown(f"**DHB:** {dhb}")
+            st.markdown(f"**Domicile:** {domicile}")
+            st.markdown(f"**Primary Caregiver:** {primary_caregiver}")
+        with col2:
+            st.markdown(f"**Client NHI:** {client_nhi}")
+            st.markdown(f"**Ethnicity:** {ethnicity}")
+            st.markdown(f"**Gender:** {gender}")
+            st.markdown(f"**Well Child Level of Need:** {well_child_level_of_need}")
         
         st.divider()
         
+        # DISCUSSION TOPICS section
         st.markdown("### DISCUSSION TOPICS")
         st.markdown(f"- **Housing:** {housing_topics}")
         st.markdown(f"- **Impairment:** {impairment_topics}")
@@ -472,6 +493,7 @@ def render_report_preview(data_row: pd.Series):
         
         st.divider()
         
+        # SUMMARIES section
         st.markdown("### SUMMARIES")
         
         st.markdown(f"**Housing Situation:**")
@@ -485,6 +507,7 @@ def render_report_preview(data_row: pd.Series):
         
         st.divider()
         
+        # RISK FLAGS section
         st.markdown("### RISK FLAGS")
         st.markdown(f"- **Housing:** {housing_risk_raw}")
         st.markdown(f"- **Impairment:** {impairment_risk_raw}")
@@ -632,7 +655,7 @@ with col1:
     client_name_input = st.text_input("Client Name", placeholder="Enter client name", key="client_name_input")
 
 with col2:
-    nurse_name_input = st.text_input("Nurse Name", placeholder="Enter nurse name", key="nurse_name_input")
+    client_nhi_input = st.text_input("Client NHI", placeholder="Enter client NHI", key="client_nhi_input")
 
 with col3:
     report_date_input = st.date_input("Report Date", value=None, key="report_date_input")
@@ -642,13 +665,13 @@ with col4:
     search_clicked = st.button("Search", type="primary", use_container_width=True, key="search_btn")
 
 if search_clicked:
-    if not client_name_input and not nurse_name_input and not report_date_input:
-        st.error("Please enter at least one search criteria (Client Name, Nurse Name, or Report Date).")
+    if not client_name_input and not client_nhi_input and not report_date_input:
+        st.error("Please enter at least one search criteria (Client Name, Client NHI, or Report Date).")
     else:
         with st.spinner("Searching..."):
             df = search_client_data(
                 client_name=client_name_input if client_name_input else None,
-                nurse_name=nurse_name_input if nurse_name_input else None,
+                client_nhi=client_nhi_input if client_nhi_input else None,
                 assessment_date=report_date_input if report_date_input else None,
                 user_token=user_token
             )
@@ -673,11 +696,11 @@ if st.session_state.search_results is not None:
     else:
         display_df = pd.DataFrame({
             'Client Name': df['client_name'].apply(safe_str),
-            'Nurse Name': df['nurse_name'].apply(safe_str),
-            'Date': df['createdon'].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notna(x) and hasattr(x, 'strftime') else str(x)[:10] if pd.notna(x) else 'N/A'),
-            'Housing Risk': df['housing_risk_flag'].apply(safe_str),
-            'Impairment Risk': df['impairment_risk_flag'].apply(safe_str),
-            'MMH Risk': df['mmh_risk_flag'].apply(safe_str)
+            'Client NHI': df['client_nhi'].apply(safe_str),
+            'Response House': df['response_house'].apply(safe_str),
+            'Response Impa': df['response_impa'].apply(safe_str),
+            'Response MMH': df['response_mmh'].apply(safe_str),
+            'Create Date': df['createdon'].apply(lambda x: x.strftime('%Y-%m-%d') if pd.notna(x) and hasattr(x, 'strftime') else str(x)[:10] if pd.notna(x) else 'N/A')
         })
         
         n_rows = len(display_df)
@@ -700,7 +723,7 @@ if st.session_state.search_results is not None:
                     width="small"
                 )
             },
-            disabled=['Client Name', 'Nurse Name', 'Date', 'Housing Risk', 'Impairment Risk', 'MMH Risk'],
+            disabled=['Client Name', 'Client NHI', 'Response House', 'Response Impa', 'Response MMH', 'Create Date'],
             hide_index=True,
             use_container_width=True,
             height=min(280, 56 * (n_rows + 1)),
@@ -760,17 +783,29 @@ with btn_container:
         st.markdown('<div class="download-btn">', unsafe_allow_html=True)
         if has_selection:
             selected_idx = st.session_state.selected_row_index
-            data_row = st.session_state.search_results.iloc[selected_idx]
-            pdf_buffer = generate_pdf(data_row)
-            client_name_for_file = safe_str(data_row.get('client_name', 'unknown')).replace(' ', '_')
-            st.download_button(
-                label="Download PDF",
-                data=pdf_buffer,
-                file_name=f"client_report_{client_name_for_file}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf",
-                type="secondary",
-                key="download_btn"
-            )
+            search_row = st.session_state.search_results.iloc[selected_idx]
+            client_id = search_row.get('koo_clientid', '')
+            report_df = load_report_data(client_id, user_token)
+            if not report_df.empty:
+                data_row = report_df.iloc[0]
+                pdf_buffer = generate_pdf(data_row)
+                client_name_for_file = safe_str(data_row.get('client_name', 'unknown')).replace(' ', '_')
+                st.download_button(
+                    label="Download PDF",
+                    data=pdf_buffer,
+                    file_name=f"client_report_{client_name_for_file}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                    mime="application/pdf",
+                    type="secondary",
+                    key="download_btn"
+                )
+            else:
+                st.button(
+                    "Download PDF",
+                    type="secondary",
+                    disabled=True,
+                    key="download_btn_no_data"
+                )
+                st.caption("No report data found")
         else:
             st.button(
                 "Download PDF",
@@ -782,11 +817,17 @@ with btn_container:
 
 if preview_clicked and has_selection:
     selected_idx = st.session_state.selected_row_index
-    new_data = st.session_state.search_results.iloc[selected_idx]
-    if st.session_state.report_data is not None:
-        st.session_state.report_data = None
+    search_row = st.session_state.search_results.iloc[selected_idx]
+    client_id = search_row.get('koo_clientid', '')
+    report_df = load_report_data(client_id, user_token)
+    if not report_df.empty:
+        new_data = report_df.iloc[0]
+        if st.session_state.report_data is not None:
+            st.session_state.report_data = None
+        else:
+            st.session_state.report_data = new_data
     else:
-        st.session_state.report_data = new_data
+        st.error("No report data found for the selected client.")
 
 if st.session_state.report_data is not None:
     st.markdown("---")
