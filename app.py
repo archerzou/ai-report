@@ -581,7 +581,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     .stApp {
-        background-color: #FFFFFF;
+        background-color: #0D1117;
     }
     .main-header {
         display: flex;
@@ -591,7 +591,7 @@ st.markdown("""
     .pdf-icon {
         width: 40px;
         height: 40px;
-        background-color: #0099D8;
+        background-color: #E91E63;
         color: white;
         display: flex;
         align-items: center;
@@ -605,18 +605,18 @@ st.markdown("""
         display: flex;
         align-items: center;
         margin-bottom: 16px;
-        color: #1A1A1A;
+        color: #E6EDF3;
     }
     .section-header::before {
         content: '';
         width: 4px;
         height: 24px;
-        background-color: #0099D8;
+        background-color: #E91E63;
         margin-right: 12px;
         border-radius: 2px;
     }
     .stButton > button {
-        background-color: #0099D8 !important;
+        background-color: #E91E63 !important;
         color: white !important;
         border: none;
         padding: 10px 20px;
@@ -624,163 +624,62 @@ st.markdown("""
         font-weight: 500;
     }
     .stButton > button:hover {
-        background-color: #007BB5 !important;
+        background-color: #C2185B !important;
     }
     .stButton > button:disabled {
-        background-color: #ADB5BD !important;
-        color: #6C757D !important;
+        background-color: #30363D !important;
+        color: #8B949E !important;
     }
     .card {
-        background-color: #F8F9FA;
-        border: 1px solid #DEE2E6;
+        background-color: #161B22;
+        border: 1px solid #30363D;
         border-radius: 8px;
         padding: 20px;
         margin-bottom: 16px;
     }
-    /* Text input styling */
-    .stTextInput > div > div > input,
-    [data-testid="stTextInput"] input {
-        background-color: #FFFFFF !important;
-        border: 1px solid #DEE2E6 !important;
-        color: #1A1A1A !important;
+    .stTextInput > div > div > input {
+        background-color: #0D1117;
+        border: 1px solid #30363D;
+        color: #E6EDF3;
     }
-    
-    /* Date input styling - comprehensive selectors */
-    .stDateInput > div > div > input,
-    [data-testid="stDateInput"] input,
-    [data-testid="stDateInput"] > div,
-    [data-testid="stDateInput"] > div > div {
-        background-color: #FFFFFF !important;
-        border-color: #DEE2E6 !important;
-        color: #1A1A1A !important;
+    .stDateInput > div > div > input {
+        background-color: #0D1117;
+        border: 1px solid #30363D;
+        color: #E6EDF3;
     }
-    [data-testid="stDateInput"] {
-        background-color: #FFFFFF !important;
-    }
-    
     h1, h2, h3, p, label {
-        color: #1A1A1A !important;
+        color: #E6EDF3 !important;
     }
-    
-    /* Data table/editor styling - comprehensive light theme */
-    .stDataFrame,
-    [data-testid="stDataFrame"],
-    [data-testid="stDataFrameResizable"] {
-        background-color: #FFFFFF !important;
+    .stDataFrame {
+        background-color: #161B22;
     }
-    
-    /* Table header styling */
-    [data-testid="stDataFrame"] thead tr th,
-    [data-testid="stDataFrameResizable"] thead tr th,
-    .stDataFrame thead tr th {
-        background-color: #F8F9FA !important;
-        color: #1A1A1A !important;
-        border-color: #DEE2E6 !important;
-    }
-    
-    /* Table body rows */
-    [data-testid="stDataFrame"] tbody tr,
-    [data-testid="stDataFrameResizable"] tbody tr,
-    .stDataFrame tbody tr {
-        background-color: #FFFFFF !important;
-        color: #1A1A1A !important;
-    }
-    
-    /* Table cells */
-    [data-testid="stDataFrame"] td,
-    [data-testid="stDataFrameResizable"] td,
-    .stDataFrame td {
-        background-color: #FFFFFF !important;
-        color: #1A1A1A !important;
-        border-color: #DEE2E6 !important;
-    }
-    
-    /* Selected row styling - light blue highlight */
-    [data-testid="stDataFrame"] tbody tr[aria-selected="true"],
-    [data-testid="stDataFrame"] tbody tr[data-selected="true"],
-    [data-testid="stDataFrameResizable"] tbody tr[aria-selected="true"],
-    .stDataFrame tbody tr.row-selected {
-        background-color: #E7F1FF !important;
-        color: #1A1A1A !important;
-    }
-    
-    /* Glide data grid styling (used by st.data_editor) */
-    .dvn-scroller,
-    .gdg-style {
-        background-color: #FFFFFF !important;
-    }
-    
-    /* Data editor cells */
-    [data-testid="stDataFrame"] [role="gridcell"],
-    [data-testid="stDataFrameResizable"] [role="gridcell"] {
-        background-color: #FFFFFF !important;
-        color: #1A1A1A !important;
-    }
-    
-    /* Data editor header cells */
-    [data-testid="stDataFrame"] [role="columnheader"],
-    [data-testid="stDataFrameResizable"] [role="columnheader"] {
-        background-color: #F8F9FA !important;
-        color: #1A1A1A !important;
-    }
-    
     .empty-state {
         text-align: center;
         padding: 40px;
-        color: #6C757D;
+        color: #8B949E;
     }
-    
     /* Hide 'Press Enter to apply' hint */
     .stTextInput > div > div > div[data-testid="InputInstructions"],
     .stDateInput > div > div > div[data-testid="InputInstructions"] {
         display: none !important;
     }
-    
-    /* Preview button - blue with white text */
-    .preview-btn button,
-    .preview-btn [data-testid="baseButton-secondary"] {
-        background-color: #0099D8 !important;
-        color: #FFFFFF !important;
+    /* Preview button - blue */
+    .preview-btn button {
+        background-color: #2563EB !important;
+        color: white !important;
         max-width: 150px !important;
     }
     .preview-btn button:hover {
-        background-color: #007BB5 !important;
+        background-color: #1D4ED8 !important;
     }
-    .preview-btn button:disabled {
-        background-color: #B8D4E8 !important;
-        color: #FFFFFF !important;
-    }
-    
-    /* Download button - light blue with white text */
-    .download-btn button,
-    .download-btn [data-testid="baseButton-secondary"],
-    .download-btn a {
+    /* Download button - light blue */
+    .download-btn button {
         background-color: #60A5FA !important;
-        color: #FFFFFF !important;
+        color: white !important;
         max-width: 150px !important;
-        border-radius: 6px;
-        padding: 10px 20px;
-        text-decoration: none;
-        display: inline-block;
     }
     .download-btn button:hover {
         background-color: #3B82F6 !important;
-    }
-    .download-btn button:disabled {
-        background-color: #B8D4E8 !important;
-        color: #FFFFFF !important;
-    }
-    
-    /* Ensure all disabled buttons have white text */
-    .stButton > button:disabled,
-    button:disabled {
-        color: #FFFFFF !important;
-    }
-    
-    /* Checkbox styling in data editor */
-    [data-testid="stDataFrame"] input[type="checkbox"],
-    .stCheckbox input[type="checkbox"] {
-        accent-color: #0099D8;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -789,8 +688,8 @@ st.markdown("""
 <div class="main-header">
     <div class="pdf-icon">PDF</div>
     <div>
-        <h1 style="margin: 0; font-size: 28px; color: #1A1A1A;">Healthcare Dashboard</h1>
-        <p style="color: #6C757D; margin: 0;">Search for client records and generate reports.</p>
+        <h1 style="margin: 0; font-size: 28px; color: #E6EDF3;">Healthcare Dashboard</h1>
+        <p style="color: #8B949E; margin: 0;">Search for client records and generate reports.</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -997,8 +896,8 @@ if st.session_state.report_data is not None:
     st.markdown(f'<div class="section-header">Report Preview: {client_name}</div>', unsafe_allow_html=True)
     
     st.markdown("""
-    <div style="background-color: #F8F9FA; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 10px; border: 1px solid #DEE2E6;">
-        <span style="color: #6C757D;">Report Preview</span>
+    <div style="background-color: #161B22; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 10px; border: 1px solid #30363D;">
+        <span style="color: #8B949E;">Report Preview</span>
     </div>
     """, unsafe_allow_html=True)
     
