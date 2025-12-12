@@ -278,7 +278,7 @@ class PDFHeader(Flowable):
         
         if self.logo_path and os.path.exists(self.logo_path):
             try:
-                logo_height = self.height * 0.6
+                logo_height = self.height * 1.2
                 logo_width = logo_height * 1.2
                 logo_x = self.width - logo_width - 15
                 logo_y = (self.height - logo_height) / 2 + 5
