@@ -1,4 +1,5 @@
 import os
+import math
 from databricks import sql
 from databricks.sdk.core import Config
 import streamlit as st
@@ -9,8 +10,9 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch, cm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image, Flowable
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+from reportlab.pdfgen import canvas
 
 # Ensure environment variable is set correctly
 assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
@@ -240,6 +242,54 @@ def format_risk_flag(flag) -> str:
     return "HIGH RISK" if normalize_flag(flag) else "LOW RISK"
 
 
+class PDFHeader(Flowable):
+    """Custom flowable for PDF header with blue background, wave pattern, and logo."""
+    
+    def __init__(self, width, height, logo_path=None):
+        Flowable.__init__(self)
+        self.width = width
+        self.height = height
+        self.logo_path = logo_path
+    
+    def draw(self):
+        c = self.canv
+        
+        c.setFillColor(colors.HexColor("#0099D8"))
+        c.rect(0, 0, self.width, self.height, fill=1, stroke=0)
+        
+        c.setFillColor(colors.white)
+        wave_path = c.beginPath()
+        wave_path.moveTo(0, 0)
+        
+        wave_height = self.height * 0.25
+        num_points = 100
+        for i in range(num_points + 1):
+            x = (i / num_points) * self.width
+            y = wave_height * (0.5 + 0.5 * math.sin((i / num_points) * math.pi * 2 - math.pi / 2))
+            if i == 0:
+                wave_path.moveTo(x, y)
+            else:
+                wave_path.lineTo(x, y)
+        
+        wave_path.lineTo(self.width, 0)
+        wave_path.lineTo(0, 0)
+        wave_path.close()
+        c.drawPath(wave_path, fill=1, stroke=0)
+        
+        if self.logo_path and os.path.exists(self.logo_path):
+            try:
+                logo_height = self.height * 0.6
+                logo_width = logo_height * 1.2
+                logo_x = self.width - logo_width - 15
+                logo_y = (self.height - logo_height) / 2 + 5
+                c.drawImage(self.logo_path, logo_x, logo_y, width=logo_width, height=logo_height, preserveAspectRatio=True, mask='auto')
+            except Exception:
+                pass
+    
+    def wrap(self, availWidth, availHeight):
+        return (self.width, self.height)
+
+
 def generate_pdf(data_row: pd.Series) -> BytesIO:
     """
     Generate formatted PDF report from data row.
@@ -260,8 +310,8 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
     title_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
-        fontSize=18,
-        textColor=colors.HexColor("#C41E3A"),
+        fontSize=16,
+        textColor=colors.HexColor("#0099D8"),
         spaceAfter=6,
         alignment=TA_LEFT
     )
@@ -277,20 +327,20 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
     section_header_style = ParagraphStyle(
         'SectionHeader',
         parent=styles['Heading2'],
-        fontSize=14,
-        textColor=colors.HexColor("#333333"),
-        spaceBefore=16,
-        spaceAfter=8,
+        fontSize=12,
+        textColor=colors.HexColor("#0099D8"),
+        spaceBefore=14,
+        spaceAfter=6,
         borderPadding=4
     )
     
     subsection_style = ParagraphStyle(
         'SubSection',
         parent=styles['Heading3'],
-        fontSize=12,
+        fontSize=10,
         textColor=colors.HexColor("#444444"),
-        spaceBefore=12,
-        spaceAfter=6
+        spaceBefore=10,
+        spaceAfter=4
     )
     
     body_style = ParagraphStyle(
@@ -335,13 +385,19 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
     
     story = []
     
+    page_width = A4[0] - 2*cm
+    logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'logo.png')
+    header = PDFHeader(width=page_width, height=2.5*cm, logo_path=logo_path)
+    story.append(header)
+    story.append(Spacer(1, 12))
+    
     story.append(Paragraph("CLIENT BACKGROUND REPORT", title_style))
     story.append(Paragraph("Based on Plunket AI Model Analysis", subtitle_style))
     
     story.append(HRFlowable(
         width="100%",
         thickness=1,
-        color=colors.HexColor("#DDDDDD"),
+        color=colors.HexColor("#DEE2E6"),
         spaceBefore=4,
         spaceAfter=12
     ))
@@ -366,23 +422,25 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
         ['Generated:', datetime.now().strftime('%Y-%m-%d %H:%M'), '', '']
     ]
     
-    client_info_table = Table(client_info_data, colWidths=[3.5*cm, 4.5*cm, 4*cm, 4.5*cm])
+    client_info_table = Table(client_info_data, colWidths=[3.2*cm, 5.5*cm, 3.8*cm, 5.5*cm])
     client_info_table.setStyle(TableStyle([
         ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
         ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor("#666666")),
         ('TEXTCOLOR', (2, 0), (2, -1), colors.HexColor("#666666")),
         ('TEXTCOLOR', (1, 0), (1, -1), colors.HexColor("#333333")),
         ('TEXTCOLOR', (3, 0), (3, -1), colors.HexColor("#333333")),
         ('FONTNAME', (1, 0), (1, -1), 'Helvetica-Bold'),
         ('FONTNAME', (3, 0), (3, -1), 'Helvetica-Bold'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 12),
     ]))
     story.append(client_info_table)
     story.append(Spacer(1, 12))
     
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DDDDDD"), spaceAfter=8))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DEE2E6"), spaceAfter=8))
     
     story.append(Paragraph("DISCUSSION TOPICS", section_header_style))
     
@@ -395,7 +453,7 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
     story.append(Paragraph(f"&bull; <b>Mental/Maternal Health:</b> {mmh_topics}", body_style))
     
     story.append(Spacer(1, 12))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DDDDDD"), spaceAfter=8))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DEE2E6"), spaceAfter=8))
     
     story.append(Paragraph("SUMMARIES", section_header_style))
     
@@ -412,7 +470,7 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
     story.append(Paragraph(mmh_summary, body_style))
     
     story.append(Spacer(1, 12))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DDDDDD"), spaceAfter=8))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DEE2E6"), spaceAfter=8))
     
     story.append(Paragraph("RISK FLAGS", section_header_style))
     
@@ -426,7 +484,7 @@ def generate_pdf(data_row: pd.Series) -> BytesIO:
     story.append(Paragraph(f"&bull; <b>MMH:</b> {mmh_risk_raw}", body_style))
     
     story.append(Spacer(1, 20))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DDDDDD"), spaceAfter=8))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#DEE2E6"), spaceAfter=8))
     
     story.append(Paragraph("Generated by Plunket AI Model.", footer_style))
     
@@ -523,7 +581,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     .stApp {
-        background-color: #0D1117;
+        background-color: #FFFFFF;
     }
     .main-header {
         display: flex;
@@ -533,7 +591,7 @@ st.markdown("""
     .pdf-icon {
         width: 40px;
         height: 40px;
-        background-color: #E91E63;
+        background-color: #0099D8;
         color: white;
         display: flex;
         align-items: center;
@@ -547,18 +605,18 @@ st.markdown("""
         display: flex;
         align-items: center;
         margin-bottom: 16px;
-        color: #E6EDF3;
+        color: #1A1A1A;
     }
     .section-header::before {
         content: '';
         width: 4px;
         height: 24px;
-        background-color: #E91E63;
+        background-color: #0099D8;
         margin-right: 12px;
         border-radius: 2px;
     }
     .stButton > button {
-        background-color: #E91E63 !important;
+        background-color: #0099D8 !important;
         color: white !important;
         border: none;
         padding: 10px 20px;
@@ -566,39 +624,39 @@ st.markdown("""
         font-weight: 500;
     }
     .stButton > button:hover {
-        background-color: #C2185B !important;
+        background-color: #007BB5 !important;
     }
     .stButton > button:disabled {
-        background-color: #30363D !important;
-        color: #8B949E !important;
+        background-color: #ADB5BD !important;
+        color: #6C757D !important;
     }
     .card {
-        background-color: #161B22;
-        border: 1px solid #30363D;
+        background-color: #F8F9FA;
+        border: 1px solid #DEE2E6;
         border-radius: 8px;
         padding: 20px;
         margin-bottom: 16px;
     }
     .stTextInput > div > div > input {
-        background-color: #0D1117;
-        border: 1px solid #30363D;
-        color: #E6EDF3;
+        background-color: #FFFFFF;
+        border: 1px solid #DEE2E6;
+        color: #1A1A1A;
     }
     .stDateInput > div > div > input {
-        background-color: #0D1117;
-        border: 1px solid #30363D;
-        color: #E6EDF3;
+        background-color: #FFFFFF;
+        border: 1px solid #DEE2E6;
+        color: #1A1A1A;
     }
     h1, h2, h3, p, label {
-        color: #E6EDF3 !important;
+        color: #1A1A1A !important;
     }
     .stDataFrame {
-        background-color: #161B22;
+        background-color: #F8F9FA;
     }
     .empty-state {
         text-align: center;
         padding: 40px;
-        color: #8B949E;
+        color: #6C757D;
     }
     /* Hide 'Press Enter to apply' hint */
     .stTextInput > div > div > div[data-testid="InputInstructions"],
@@ -607,12 +665,12 @@ st.markdown("""
     }
     /* Preview button - blue */
     .preview-btn button {
-        background-color: #2563EB !important;
+        background-color: #0099D8 !important;
         color: white !important;
         max-width: 150px !important;
     }
     .preview-btn button:hover {
-        background-color: #1D4ED8 !important;
+        background-color: #007BB5 !important;
     }
     /* Download button - light blue */
     .download-btn button {
@@ -630,8 +688,8 @@ st.markdown("""
 <div class="main-header">
     <div class="pdf-icon">PDF</div>
     <div>
-        <h1 style="margin: 0; font-size: 28px; color: #E6EDF3;">Healthcare Dashboard</h1>
-        <p style="color: #8B949E; margin: 0;">Search for client records and generate reports.</p>
+        <h1 style="margin: 0; font-size: 28px; color: #1A1A1A;">Healthcare Dashboard</h1>
+        <p style="color: #6C757D; margin: 0;">Search for client records and generate reports.</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -838,8 +896,8 @@ if st.session_state.report_data is not None:
     st.markdown(f'<div class="section-header">Report Preview: {client_name}</div>', unsafe_allow_html=True)
     
     st.markdown("""
-    <div style="background-color: #161B22; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 10px; border: 1px solid #30363D;">
-        <span style="color: #8B949E;">Report Preview</span>
+    <div style="background-color: #F8F9FA; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 10px; border: 1px solid #DEE2E6;">
+        <span style="color: #6C757D;">Report Preview</span>
     </div>
     """, unsafe_allow_html=True)
     
